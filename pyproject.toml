@@ -1,0 +1,9 @@
+[project]
+name = "guard-client"
+version = "0.0.1"
+description = "A seamless Python client for integrating visual safety filters - including deepfake, violence, and explicit content detection - into your applications"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "httpx>=0.28.1",
+]

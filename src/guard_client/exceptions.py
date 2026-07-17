@@ -1,0 +1,1 @@
+# TODO: Custom error classes (e.g., GuardAPIError, AuthError)
