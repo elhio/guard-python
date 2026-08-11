@@ -104,13 +104,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
           AWS_DEFAULT_REGION: ${{ vars.MINIO_REGION || 'us-east-1' }}
           AWS_ENDPOINT_URL_S3: ${{ vars.MINIO_ENDPOINT }}
-          BUCKET: ${{ vars.DOCS_BUCKET }}
+          BUCKET: ${{ vars.MINIO_BUCKET }}
         run: |
           set -euo pipefail
 
           # Say which setting is missing, rather than failing later against AWS.
           : "${AWS_ENDPOINT_URL_S3:?set the MINIO_ENDPOINT repository variable}"
-          : "${BUCKET:?set the DOCS_BUCKET repository variable}"
+          : "${BUCKET:?set the MINIO_BUCKET repository variable}"
 
           # MinIO serves path-style addressing. Virtual-host style needs wildcard DNS
           # that a self-hosted instance usually does not have, and no environment
