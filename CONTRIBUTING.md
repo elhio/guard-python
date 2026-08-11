@@ -124,20 +124,26 @@ silently when the extra is not installed. Because of this, a green full-suite ru
 local engine. If you explicitly name the file, the test runner will loudly warn you if `guard_local` is missing. When 
 you are finished, running `uv sync` returns you to the default environment.
 
-### Smoke Testing against a Live API
+### Testing against a Live API
 
-The test suite is fully mocked and never touches the network. To exercise the real lifecycle end-to-end, use the smoke 
-script. **It runs against production by default and spends real tokens**. Each run creates two activities. You can point 
-it elsewhere using the `GUARD_BASE_URL` environment variable.
+The test suite is fully mocked and never touches the network. To exercise the real lifecycle end-to-end, create an 
+activity. **This runs against production by default and spends real tokens** — one activity per run. You can point it 
+elsewhere using the `GUARD_BASE_URL` environment variable.
 
 ```bash
-export GUARD_API_KEY=...      # a token_raw from POST /api/v1/tokens/
+export GUARD_API_KEY=... # a token_raw from POST /api/v1/tokens/
 export GUARD_SPACE_ID=...
 
-uv run python scripts/smoke.py path/to/photo.jpg
+# see the space and the projected cost, creating nothing
+uv run python scripts/create_activity.py path/to/photo.jpg --list-only
+
+uv run python scripts/create_activity.py path/to/photo.jpg
 
 # against a local dev server instead
-GUARD_BASE_URL=http://localhost:8000 uv run python scripts/smoke.py path/to/photo.jpg
+GUARD_BASE_URL=http://localhost:8000 uv run python scripts/create_activity.py path/to/photo.jpg
+
+# on-device, which needs no space, no network and no tokens
+uv run python scripts/create_activity.py path/to/photo.jpg --engine local
 ```
 
 Credentials resolve the same way everywhere in this client: explicit arguments, followed by `GUARD_* `environment 
@@ -145,14 +151,21 @@ variables, and finally a `.env` file. You can simply run `cp .env.example .env` 
 exporting variables. The `.env` file is git-ignored and must stay that way. Please never put a real key in 
 `.env.example`.
 
-If you do not have a `space_id` yet, two more scripts can help:
+If you do not have a `space_id` yet, four more scripts can help:
 
 ```bash
 # list the spaces your key can see, with their ids
 uv run python scripts/list_spaces.py
 
+# the two ids a new space needs: a predictor, and optionally some tasks
+uv run python scripts/list_predictors.py
+uv run python scripts/list_tasks.py --predictor-id <uuid>
+
 # walk predictors -> tasks -> create a space (--list-only creates nothing)
 uv run python scripts/create_space.py --list-only
+
+# and then, with a space id in hand, analyze something in it
+uv run python scripts/create_activity.py path/to/photo.jpg --list-only
 ```
 
 ## What to Watch Out For
@@ -172,7 +185,7 @@ this package.
 the contract has changed. It is excluded from `ruff format` and carries its own per-file-ignores entry to preserve this. 
 Please do not reformat it, and if you modify it, be sure to update both copies.
 
-**Everything raised must subclass `GuardError`.** hat is the promise our `except` clauses rely on. The engine's own 
+**Everything raised must subclass `GuardError`.** That is the promise our `except` clauses rely on. The engine's own 
 exceptions do not subclass it, so `local.py` translates each one before it escapes using `_map_local_error`. Anything 
 that does not come from `guard_local` propagates untouched. This is intentional, as a bug in the engine should surface 
 exactly as the bug it is.

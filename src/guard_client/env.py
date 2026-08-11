@@ -32,16 +32,11 @@ Examples:
         # The .env file supplies the key and space.
         result = client.analyze("photo.jpg")
 
-    GuardClient(env_file=None)  # doctest: +SKIP
-    GuardClient(env_file=".env.staging")  # doctest: +SKIP
+    GuardClient(env_file=None)  # skip the .env file entirely
+    GuardClient(env_file=".env.staging")  # read a different file instead
     ```
 
 Note:
-    Reading a `.env` file never writes to `os.environ`. Values are held in a plain dict
-    on the `EnvSource`. Because of this, constructing a client cannot surprise anything
-    else running in the same process.
-
-Tip:
     Reading a `.env` file never writes to `os.environ`. Values are held in a plain dict
     on the `EnvSource`. Because of this, constructing a client cannot surprise anything
     else running in the same process.

@@ -325,7 +325,8 @@ def isolate_env(tmp_path_factory, monkeypatch):
 
     * exported ``GUARD_*`` variables in the shell running pytest, and
     * a real ``.env`` in the repo — ``find_dotenv`` walks *up* from the cwd, so once a
-      developer creates one for the smoke script it would otherwise leak into the suite.
+      developer creates one for ``scripts/create_activity.py`` it would otherwise leak
+      into the suite.
 
     Tests that want a ``.env`` write one into the cwd this provides.
     """

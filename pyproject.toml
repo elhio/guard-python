@@ -45,7 +45,7 @@ dependencies = [
 local = ["guard-local-detector>=0.0.1"]
 
 [project.urls]
-Homepage = "https://github.com/elhio/guard-python"
+Homepage = "https://elhio.com/"
 Repository = "https://github.com/elhio/guard-python"
 Issues = "https://github.com/elhio/guard-python/issues"
 Changelog = "https://github.com/elhio/guard-python/releases"

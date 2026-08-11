@@ -49,11 +49,11 @@ _INSTALL_HINT = (
 #: keeps them reproducible across processes and releases.
 _LOCAL_TASK_NAMESPACE = UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
-#: Maps the excepti raises for the same mistake, rather than a local-only
-#: twin of it.on name from `guard_local.exceptions` to the `GuardError` raised in
+#: Maps the exception name from `guard_local.exceptions` to the `GuardError` raised in
 #: its place. The engine's hierarchy derives from nothing here, so without this map an
 #: `except GuardError` would miss every local failure. `UnsupportedMediaError` maps onto
-#: the type the cloud path already
+#: the type the cloud path already raises for the same mistake, rather than a local-only
+#: twin of it.
 _LOCAL_ERROR_MAP: Dict[str, Type[GuardError]] = {
     "UnsupportedMediaError": UnsupportedMediaTypeError,
     "MediaDecodeError": GuardMediaDecodeError,

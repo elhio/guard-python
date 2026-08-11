@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Dict, Iterator, Optional, Union
 
-from .filters import MAX_LIMIT, IdLike, add_ids, add_sort, validate_pagination
+from .filters import (
+    MAX_LIMIT,
+    IdLike,
+    add_ids,
+    add_sort,
+    reject_conflicting_owners,
+    validate_pagination,
+)
 from .models import SortOrder, Task, TaskOrder, TaskPage
 from .transport import AsyncTransport, SyncTransport
 
@@ -57,13 +64,12 @@ class _TasksBase:
             The query dict with every unset filter omitted.
 
         Raises:
-            GuardError: If a filter value is invalid.
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
+        reject_conflicting_owners(user_id, organization_id)
         validate_pagination(skip, limit)
 
         params: Dict[str, Any] = {"skip": skip, "limit": limit}
-        # unlike spaces, this route does not reject both owner filters together, so no
-        # mutual-exclusion check is imposed here
         add_ids(
             params,
             user_id=user_id,
@@ -118,6 +124,9 @@ class Tasks(_TasksBase):
 
         Returns:
             A `TaskPage`. You can iterate it like a list or read `.count`.
+
+        Raises:
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
         params = self._list_params(
             user_id=user_id,
@@ -219,6 +228,9 @@ class AsyncTasks(_TasksBase):
 
         Returns:
             A `TaskPage`. Review `Tasks.list` for full filter details.
+
+        Raises:
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
         params = self._list_params(
             user_id=user_id,

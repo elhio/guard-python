@@ -121,6 +121,11 @@ def load_media(
         media_type: Skips detection when you already know the type.
         filename: Used for detection and for naming a saved file.
 
+    Returns:
+        A `(data, media_type, filename)` tuple. The bytes are already in memory, so a
+        URL source is fetched exactly once no matter how often the result is shown or
+        saved afterwards.
+
     Raises:
         GuardError: A result object carries no media, or a URL could not be fetched.
         UnsupportedMediaTypeError: The media type is not one the API accepts.

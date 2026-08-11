@@ -9,7 +9,15 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Dict, Iterator, Optional, Sequence, Union
 
-from .filters import MAX_LIMIT, IdLike, add_ids, add_sort, id_list, validate_pagination
+from .filters import (
+    MAX_LIMIT,
+    IdLike,
+    add_ids,
+    add_sort,
+    id_list,
+    reject_conflicting_owners,
+    validate_pagination,
+)
 from .models import Predictor, PredictorOrder, PredictorPage, SortOrder
 from .transport import AsyncTransport, SyncTransport
 
@@ -57,13 +65,12 @@ class _PredictorsBase:
             The query dict with every unset filter omitted.
 
         Raises:
-            GuardError: If a filter value is invalid.
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
+        reject_conflicting_owners(user_id, organization_id)
         validate_pagination(skip, limit)
 
         params: Dict[str, Any] = {"skip": skip, "limit": limit}
-        # unlike spaces, this route does not reject both owner filters together, so no
-        # mutual-exclusion check is imposed here
         add_ids(params, user_id=user_id, organization_id=organization_id)
         task_ids = id_list(supported_task_ids, field="supported_task_ids")
         if task_ids:
@@ -115,6 +122,9 @@ class Predictors(_PredictorsBase):
 
         Returns:
             A `PredictorPage`. You can iterate it like a list or read `.count`.
+
+        Raises:
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
         params = self._list_params(
             user_id=user_id,
@@ -216,6 +226,9 @@ class AsyncPredictors(_PredictorsBase):
 
         Returns:
             A `PredictorPage`. Review `Predictors.list` for full filter details.
+
+        Raises:
+            GuardError: If a filter value is invalid or both owner filters were given.
         """
         params = self._list_params(
             user_id=user_id,

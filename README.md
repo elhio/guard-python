@@ -121,43 +121,24 @@ not into a different data shape.
 
 ## Development
 
-This project uses [uv](https://docs.astral.sh/uv/) for lightning-fast Python package and environment management.
+This project uses [uv](https://docs.astral.sh/uv/) for package and environment management. A single `uv sync` creates 
+the `.venv`, reads `uv.lock`, and installs everything exactly as it was locked. The test suite is fully mocked, so 
+there is no API key to obtain and no network access at any point.
 
-### Prerequisites
+```bash
+# set up the environment
+uv sync
 
-* [uv](https://docs.astral.sh/uv/) (already installed on your system)
+# run tests
+uv run pytest
 
-### Setup
+# build for production
+uv build
+```
 
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/elhio/guard-python.git
-    cd guard-python
-    ```
-
-2. Sync the environment:
-    ```bash
-    uv sync
-    ```
-    *This command automatically creates a `.venv` virtual environment, reads the `uv.lock` file, and installs all core* 
-    *and development dependencies exactly as they were locked.*
-
-3. Run tests:
-    ```bash
-    uv run pytest
-    ```
-
-4. Formatting, linting and type checking:
-    ```bash
-    uv run ruff format
-    uv run ruff check
-    uv run mypy src/
-    ```
-
-5. Build for production:
-    ```bash
-    uv build
-    ```
+The [Contributing Guide](https://github.com/elhio/guard-python/blob/main/CONTRIBUTING.md) covers the rest: linting and 
+type checking, the documentation build, working against the optional local engine and its shared contract suite, and 
+testing end-to-end against a live API.
 
 ## Contributing
 

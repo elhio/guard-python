@@ -411,6 +411,21 @@ class Activities(_ActivitiesBase):
         """
         Yield every matching activity by fetching pages as needed.
 
+        Args:
+            user_id: Only this user's activities. This may be combined with
+                `organization_id`, and the API will apply both.
+            organization_id: Only this organization's activities.
+            space_id: Only activities in this space.
+            start_date: A `datetime`, `date`, or an ISO-8601 string. The API keeps only
+                one year of history. Anything older is rejected locally before the
+                request is sent. Omitting it defaults to exactly one year ago. A naive
+                datetime is interpreted as UTC to match the server.
+            end_date: Accepts the same types as start_date. Defaults to now.
+            statuses: Keep only activities with these statuses.
+            sort_by: Valid options include `"created_at"`. Server default: `created_at`.
+            sort_order: `"asc"` or `"desc"`. Server default for activities: `desc`.
+            page_size: Page size, 1-100.
+
         Yields:
             Each matching activity, starting with the oldest page first.
 
@@ -454,6 +469,11 @@ class Activities(_ActivitiesBase):
             activity_id: The activity to check.
             interval: Seconds to wait between polling requests.
             timeout: Maximum seconds to wait before raising an error.
+
+        Returns:
+            The terminal status, which is always `completed`. An activity that ended as
+            `failed` or `canceled` raises rather than returning, so a value coming back
+            from here needs no further checking.
 
         Raises:
             ActivityFailedError: The activity ended as `failed` or `canceled`.

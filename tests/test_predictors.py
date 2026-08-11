@@ -91,17 +91,19 @@ def test_list_omits_unset_filters(client):
 
 
 @respx.mock
-def test_list_accepts_both_owner_filters(client):
+def test_conflicting_owner_filters_raise_before_any_request(client):
     """
-    Verify that filtering by both user and organization simultaneously is accepted.
+    Verify that filtering by both user and organization simultaneously raises locally,
+    before the API answers 400 to that pair.
     """
     route = respx.get(PREDICTORS_URL).mock(
         return_value=httpx.Response(200, json=page_response([]))
     )
 
-    client.predictors.list(user_id=TASK_ID, organization_id=ORG_ID)
+    with pytest.raises(GuardError, match="both user_id and organization_id"):
+        client.predictors.list(user_id=TASK_ID, organization_id=ORG_ID)
 
-    assert route.called
+    assert not route.called
 
 
 @pytest.mark.parametrize(

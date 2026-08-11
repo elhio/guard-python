@@ -83,18 +83,19 @@ def test_list_omits_unset_filters(client):
 
 
 @respx.mock
-def test_list_accepts_both_owner_filters(client):
+def test_conflicting_owner_filters_raise_before_any_request(client):
     """
-    Ensure that passing both user_id and organization_id filters is permitted for
-    tasks.
+    Ensure specifying both user_id and organization_id filters raises an error locally
+    before calling the API, which answers 400 to that pair.
     """
     route = respx.get(TASKS_URL).mock(
         return_value=httpx.Response(200, json=page_response([]))
     )
 
-    client.tasks.list(user_id=TASK_ID, organization_id=ORG_ID)
+    with pytest.raises(GuardError, match="both user_id and organization_id"):
+        client.tasks.list(user_id=TASK_ID, organization_id=ORG_ID)
 
-    assert route.called
+    assert not route.called
 
 
 @pytest.mark.parametrize(
