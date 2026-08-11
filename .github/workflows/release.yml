@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: '3.12'
+      - name: Check the release tag matches the package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          tag="${TAG#v}"
+          version="$(uv version --short)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Release tag '$TAG' does not match the version in pyproject.toml ('$version')."
+            echo "Bump pyproject.toml, or retag the release."
+            exit 1
+          fi
+          echo "Releasing guard-client $version"
+      - name: Build the package
+        run: uv build
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dist
+          path: dist/
+          retention-days: 7
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: release-dist
+          path: dist
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  attach-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  docs:
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: '3.12'
+      - name: Install the docs group
+        run: uv sync --locked --group docs
+      - name: Build the documentation
+        run: uv run python scripts/build_docs.py --strict
+      - name: Upload the documentation to MinIO
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.MINIO_REGION || 'us-east-1' }}
+          AWS_ENDPOINT_URL_S3: ${{ vars.MINIO_ENDPOINT }}
+          BUCKET: ${{ vars.DOCS_BUCKET }}
+        run: |
+          set -euo pipefail
+
+          # Say which setting is missing, rather than failing later against AWS.
+          : "${AWS_ENDPOINT_URL_S3:?set the MINIO_ENDPOINT repository variable}"
+          : "${BUCKET:?set the DOCS_BUCKET repository variable}"
+
+          # MinIO serves path-style addressing. Virtual-host style needs wildcard DNS
+          # that a self-hosted instance usually does not have, and no environment
+          # variable controls this, so it goes in the runner's throwaway CLI config.
+          aws configure set default.s3.addressing_style path
+
+          package="$(uv run python -c "import json; print(json.load(open('docs/docs.json'))['package'])")"
+          version="$(uv run python -c "import json; print(json.load(open('docs/docs.json'))['version'])")"
+          key="docs/${package}/${version}.json"
+
+          # `--endpoint-url` is passed explicitly even though AWS_ENDPOINT_URL_S3 is
+          # normally picked up on its own: that variable needs AWS CLI v2.13+, and a
+          # runner with anything older would silently upload to the real AWS instead.
+
+          # A released version's documentation is immutable. Re-running a failed
+          # release job must not quietly rewrite what people have already read.
+          if aws --endpoint-url "$AWS_ENDPOINT_URL_S3" s3api head-object \
+               --bucket "$BUCKET" --key "$key" >/dev/null 2>&1; then
+            echo "::notice::${key} already exists; leaving it untouched."
+          else
+            aws --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+              s3 cp docs/docs.json "s3://${BUCKET}/${key}" \
+              --content-type application/json \
+              --cache-control "public, max-age=31536000, immutable"
+            echo "Uploaded ${key}"
+          fi
+
+          aws --endpoint-url "$AWS_ENDPOINT_URL_S3" \
+            s3 cp docs/docs.json "s3://${BUCKET}/docs/${package}/latest.json" \
+            --content-type application/json \
+            --cache-control "no-cache"
+          echo "Updated docs/${package}/latest.json"

@@ -8,6 +8,9 @@
 logs
 *.log
 
+# docs
+docs/docs.json
+
 # editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -42,3 +45,8 @@ test-results/
 junit.xml
 .tox/
 .nox/
+
+# build artefacts
+dist/
+build/
+*.egg-info/
