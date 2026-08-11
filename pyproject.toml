@@ -1,6 +1,6 @@
 [project]
 name = "guard-client"
-version = "0.0.1"
+version = "0.0.1rc1"
 description = "A Python client for seamlessly integrating visual safety filters into your applications"
 readme = "README.md"
 requires-python = ">=3.10"

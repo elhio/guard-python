@@ -543,7 +543,7 @@ wheels = [
 
 [[package]]
 name = "guard-client"
-version = "0.0.1"
+version = "0.0.1rc1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
