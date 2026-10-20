@@ -12,25 +12,25 @@ from typing import Any, Dict, Optional, Union
 
 import httpx
 
-from .activities import (
-    DEFAULT_POLL_INTERVAL,
-    DEFAULT_POLL_TIMEOUT,
-    Activities,
-    AsyncActivities,
-)
 from .env import DEFAULT_ENV_FILE, EnvFile, EnvSource
 from .exceptions import GuardError
 from .filters import IdLike
 from .local import LocalRunner
 from .media import MediaSource, resolve_media
 from .models import DetectionResult, Engine, MediaType, coerce_enum
+from .predictions import (
+    DEFAULT_POLL_INTERVAL,
+    DEFAULT_POLL_TIMEOUT,
+    AsyncPredictions,
+    Predictions,
+)
 from .predictors import AsyncPredictors, Predictors
 from .probe import probe_media
 from .reactions import AsyncReactions, Reactions
 from .runners import AsyncRunners, Runners
 from .shares import AsyncShares, Shares
 from .spaces import AsyncSpaces, Spaces
-from .tasks import AsyncTasks, Tasks
+from .targets import AsyncTargets, Targets
 from .tokens import TokenEstimate, estimate_tokens, frames_for
 from .transport import DEFAULT_BASE_URL, AsyncTransport, SyncTransport, TransportConfig
 
@@ -193,6 +193,29 @@ class _ClientBase:
         return self._engine if engine is None else _coerce_engine(engine)
 
     @staticmethod
+    def _declared_dimensions(
+        data: bytes, media_type: MediaType, filename: Optional[str]
+    ) -> Dict[str, Any]:
+        """
+        Probe the media for the dimensions a prediction declares on creation.
+
+        The API reserves tokens from them. Media the probe cannot read is still
+        analyzed, just without them.
+
+        Returns:
+            `width`, `height` and, for a video, `duration_seconds`, or nothing when the
+            probe failed.
+        """
+        try:
+            info = probe_media(data, media_type=media_type, filename=filename)
+        except GuardError:
+            return {}
+        dimensions: Dict[str, Any] = {"width": info.width, "height": info.height}
+        if info.media_type.value.startswith("video/"):
+            dimensions["duration_seconds"] = info.duration_seconds
+        return dimensions
+
+    @staticmethod
     def _resolve_estimate_inputs(
         *,
         source: Optional[MediaSource],
@@ -336,7 +359,7 @@ class GuardClient(_ClientBase):
         self._transport = SyncTransport(self._config, http_client=http_client)
         # The resolved ids, not the raw arguments. They may have come from the
         # environment.
-        self.activities = Activities(self._transport, default_space_id=self._space_id)
+        self.predictions = Predictions(self._transport, default_space_id=self._space_id)
         self.spaces = Spaces(
             self._transport, default_organization_id=self._organization_id
         )
@@ -344,7 +367,7 @@ class GuardClient(_ClientBase):
             self._transport, default_organization_id=self._organization_id
         )
         self.predictors = Predictors(self._transport)
-        self.tasks = Tasks(self._transport)
+        self.targets = Targets(self._transport)
         self.reactions = Reactions(self._transport)
         self.shares = Shares(self._transport)
 
@@ -364,7 +387,7 @@ class GuardClient(_ClientBase):
         """
         Run the full detection lifecycle for one piece of media.
 
-        In cloud mode this creates an activity, uploads the bytes, confirms the upload,
+        In cloud mode this creates a prediction, uploads the bytes, confirms the upload,
         polls until processing finishes, and returns the result. In local mode it runs
         on-device and makes no network calls.
 
@@ -374,7 +397,7 @@ class GuardClient(_ClientBase):
             engine: Overrides the client-level default engine for this call.
             media_type: Skips MIME detection when you already know the type.
             filename: Used for detection and for naming the uploaded file.
-            user_id: Owning user, for a user-owned activity.
+            user_id: Owning user, for a user-owned prediction.
             account_id: Owning service account.
             poll_interval: Seconds between status polls.
             timeout: Seconds to wait for processing before giving up.
@@ -383,7 +406,7 @@ class GuardClient(_ClientBase):
             A `DetectionResult`, identical in shape for either engine.
 
         Raises:
-            ActivityFailedError: Processing ended as `failed` or `canceled`.
+            PredictionFailedError: Processing ended as `failed` or `canceled`.
             GuardTimeoutError: Processing did not finish within `timeout`.
             UnsupportedMediaTypeError: The media type is not accepted.
             LocalEngineNotInstalledError: Local was requested without the extra.
@@ -405,25 +428,26 @@ class GuardClient(_ClientBase):
         if self._effective_engine(engine) is Engine.LOCAL:
             return self._local.analyze(data, media_type=resolved_type, filename=name)
 
-        activity = self.activities.create(
+        prediction = self.predictions.create(
             media_type=resolved_type,
             media_size=len(data),
             space_id=space_id,
             user_id=user_id,
             account_id=account_id,
+            **self._declared_dimensions(data, resolved_type, name),
         )
-        self.activities.upload(
-            activity.upload_data, data, media_type=resolved_type, filename=name
+        self.predictions.upload(
+            prediction.upload_data, data, media_type=resolved_type, filename=name
         )
-        self.activities.confirm(activity.id)
-        self.activities.wait_until_done(
-            activity.id, interval=poll_interval, timeout=timeout
+        self.predictions.confirm(prediction.id)
+        self.predictions.wait_until_done(
+            prediction.id, interval=poll_interval, timeout=timeout
         )
 
-        detail = self.activities.get(activity.id)
+        detail = self.predictions.get(prediction.id)
         results = detail.result_payload.results if detail.result_payload else []
         return DetectionResult(
-            engine=Engine.CLOUD, results=results, activity_id=activity.id
+            engine=Engine.CLOUD, results=results, prediction_id=prediction.id
         )
 
     def estimate_tokens(
@@ -440,7 +464,7 @@ class GuardClient(_ClientBase):
         filename: Optional[str] = None,
     ) -> TokenEstimate:
         """
-        Project what analyzing this media will cost before creating an activity.
+        Project what analyzing this media will cost before creating a prediction.
 
         `tokens = frames x resolution_cost x multiplier`. Anything not given is read
         from `source`. Anything given overrides the probe, so you can correct a single
@@ -467,8 +491,8 @@ class GuardClient(_ClientBase):
 
         Note:
             This is an estimate. The API currently reserves only the minimum possible
-            cost when an activity is created, and `payed_tokens` on the finished
-            activity is authoritative. Expect the two to differ.
+            cost when a prediction is created, and `payed_tokens` on the finished
+            prediction is authoritative. Expect the two to differ.
         """
         resolved = self._resolve_estimate_inputs(
             source=source,
@@ -616,7 +640,7 @@ class AsyncGuardClient(_ClientBase):
         self._transport = AsyncTransport(self._config, http_client=http_client)
         # The resolved ids, not the raw arguments: they may have come from the
         # environment.
-        self.activities = AsyncActivities(
+        self.predictions = AsyncPredictions(
             self._transport, default_space_id=self._space_id
         )
         self.spaces = AsyncSpaces(
@@ -626,7 +650,7 @@ class AsyncGuardClient(_ClientBase):
             self._transport, default_organization_id=self._organization_id
         )
         self.predictors = AsyncPredictors(self._transport)
-        self.tasks = AsyncTasks(self._transport)
+        self.targets = AsyncTargets(self._transport)
         self.reactions = AsyncReactions(self._transport)
         self.shares = AsyncShares(self._transport)
 
@@ -659,25 +683,26 @@ class AsyncGuardClient(_ClientBase):
                 data, media_type=resolved_type, filename=name
             )
 
-        activity = await self.activities.create(
+        prediction = await self.predictions.create(
             media_type=resolved_type,
             media_size=len(data),
             space_id=space_id,
             user_id=user_id,
             account_id=account_id,
+            **self._declared_dimensions(data, resolved_type, name),
         )
-        await self.activities.upload(
-            activity.upload_data, data, media_type=resolved_type, filename=name
+        await self.predictions.upload(
+            prediction.upload_data, data, media_type=resolved_type, filename=name
         )
-        await self.activities.confirm(activity.id)
-        await self.activities.wait_until_done(
-            activity.id, interval=poll_interval, timeout=timeout
+        await self.predictions.confirm(prediction.id)
+        await self.predictions.wait_until_done(
+            prediction.id, interval=poll_interval, timeout=timeout
         )
 
-        detail = await self.activities.get(activity.id)
+        detail = await self.predictions.get(prediction.id)
         results = detail.result_payload.results if detail.result_payload else []
         return DetectionResult(
-            engine=Engine.CLOUD, results=results, activity_id=activity.id
+            engine=Engine.CLOUD, results=results, prediction_id=prediction.id
         )
 
     async def estimate_tokens(
@@ -694,13 +719,13 @@ class AsyncGuardClient(_ClientBase):
         filename: Optional[str] = None,
     ) -> TokenEstimate:
         """
-        Project what analyzing this media will cost before creating an activity.
+        Project what analyzing this media will cost before creating a prediction.
 
         Returns:
             A `TokenEstimate`. See `GuardClient.estimate_tokens` for every argument.
 
         Warning:
-            This is an estimate, not a quote. `payed_tokens` on the finished activity
+            This is an estimate, not a quote. `payed_tokens` on the finished prediction
             is authoritative.
         """
         resolved = self._resolve_estimate_inputs(

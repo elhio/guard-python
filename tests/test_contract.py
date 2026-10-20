@@ -85,7 +85,7 @@ def test_labels_are_stable_across_calls() -> None:
     """
     Ensure labels remain entirely stable across multiple calls.
 
-    Local task IDs are generated using a UUID5 hash of the label. Because
+    Local target IDs are generated using a UUID5 hash of the label. Because
     of this, silently changing a label would inadvertently change the ID.
     """
     def labels(raw: Union[Dict[str, Any], List[Dict[str, Any]]]) -> List[str]:

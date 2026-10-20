@@ -2,7 +2,7 @@
 """
 Print the spaces available to your API key along with their IDs.
 
-Creating an activity requires a `space_id`. This script helps you find one to place in
+Creating a prediction requires a `space_id`. This script helps you find one to place in
 your `.env` file as `GUARD_SPACE_ID`. Only the `GUARD_API_KEY` is required. Everything
 else resolves through the standard client precedence using arguments, the environment,
 or a `.env` file.

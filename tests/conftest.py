@@ -25,8 +25,8 @@ if importlib.util.find_spec("guard_local") is None:
 BASE_URL = "https://api.test.invalid"
 API_KEY = "test-key"
 SPACE_ID = UUID("11111111-1111-1111-1111-111111111111")
-ACTIVITY_ID = UUID("22222222-2222-2222-2222-222222222222")
-TASK_ID = UUID("33333333-3333-3333-3333-333333333333")
+PREDICTION_ID = UUID("22222222-2222-2222-2222-222222222222")
+TARGET_ID = UUID("33333333-3333-3333-3333-333333333333")
 ORG_ID = UUID("44444444-4444-4444-4444-444444444444")
 PREDICTOR_ID = UUID("55555555-5555-5555-5555-555555555555")
 USER_ID = UUID("77777777-7777-7777-7777-777777777777")
@@ -68,16 +68,18 @@ def _now() -> str:
 
 
 def create_response(**overrides: Any) -> Dict[str, Any]:
-    """Build a mock response for an activity creation request."""
+    """Build a mock response for a prediction creation request."""
     payload: Dict[str, Any] = {
-        "id": str(ACTIVITY_ID),
+        "id": str(PREDICTION_ID),
         "status": "pending_upload",
         "created_at": _now(),
         "space_id": str(SPACE_ID),
+        "lab_id": None,
         "user_id": None,
         "account_id": None,
         "guest_id": None,
         "space_name": "Test Space",
+        "lab_name": None,
         "user_name": None,
         "account_name": None,
         "media_type": "image/png",
@@ -95,9 +97,9 @@ def create_response(**overrides: Any) -> Dict[str, Any]:
 
 
 def status_response(status: str = "completed", **overrides: Any) -> Dict[str, Any]:
-    """Build a mock status response for an activity."""
+    """Build a mock status response for a prediction."""
     payload: Dict[str, Any] = {
-        "id": str(ACTIVITY_ID),
+        "id": str(PREDICTION_ID),
         "status": status,
         "user_id": None,
         "account_id": None,
@@ -112,11 +114,11 @@ def detail_response(
     results: Optional[List[Dict[str, Any]]] = None,
     **overrides: Any,
 ) -> Dict[str, Any]:
-    """Build a mock detailed response for an activity."""
+    """Build a mock detailed response for a prediction."""
     if results is None:
         results = [
             {
-                "task_id": str(TASK_ID),
+                "target_id": str(TARGET_ID),
                 "score": 87,
                 "label": "Deepfake",
                 "description": "Likely synthetic",
@@ -124,11 +126,12 @@ def detail_response(
             }
         ]
     payload: Dict[str, Any] = {
-        "id": str(ACTIVITY_ID),
+        "id": str(PREDICTION_ID),
         "status": status,
         "created_at": _now(),
         "updated_at": _now(),
         "space_id": str(SPACE_ID),
+        "lab_id": None,
         "predictor_id": str(uuid4()),
         "runner_id": None,
         "user_id": None,
@@ -139,6 +142,7 @@ def detail_response(
         "payed_tokens": 1,
         "result_payload": {"results": results},
         "space_name": "Test Space",
+        "lab_name": None,
         "predictor_name": "default",
         "runner_name": None,
         "user_name": None,
@@ -167,7 +171,7 @@ def space_response(**overrides: Any) -> Dict[str, Any]:
         "predictor_id": str(PREDICTOR_ID),
         "predictor_name": "default",
         "enabled_media": ["image", "video"],
-        "enabled_task_names": ["Deepfake", "Violence"],
+        "enabled_target_names": ["Deepfake", "Violence"],
     }
     payload.update(overrides)
     return payload
@@ -192,16 +196,16 @@ def predictor_response(**overrides: Any) -> Dict[str, Any]:
         "slug": "default-predictor",
         "url_id": "pred123",
         "supported_media": ["image", "video"],
-        "supported_task_ids": [str(TASK_ID)],
+        "supported_target_ids": [str(TARGET_ID)],
     }
     payload.update(overrides)
     return payload
 
 
-def task_response(**overrides: Any) -> Dict[str, Any]:
-    """Build a mock response for a task."""
+def target_response(**overrides: Any) -> Dict[str, Any]:
+    """Build a mock response for a target."""
     payload: Dict[str, Any] = {
-        "id": str(TASK_ID),
+        "id": str(TARGET_ID),
         "status": "active",
         "name": "Deepfake",
         "description": "Detects synthetic media",
@@ -216,8 +220,8 @@ def reaction_response(**overrides: Any) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "id": str(REACTION_ID),
         "created_at": _now(),
-        "activity_id": str(ACTIVITY_ID),
-        "task_id": str(TASK_ID),
+        "prediction_id": str(PREDICTION_ID),
+        "target_id": str(TARGET_ID),
         "is_positive": True,
         "key_value": None,
         "description": None,
@@ -231,6 +235,7 @@ def runner_response(**overrides: Any) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "id": str(RUNNER_ID),
         "status": "running",
+        "deployment": "managed",
         "created_at": _now(),
         "terminated_at": None,
         "name": "runner-1",
@@ -251,15 +256,15 @@ def share_response(**overrides: Any) -> Dict[str, Any]:
         "id": str(SHARE_ID),
         "created_at": _now(),
         "expired_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-        "activity_id": str(ACTIVITY_ID),
-        "task_id": str(TASK_ID),
+        "prediction_id": str(PREDICTION_ID),
+        "target_id": str(TARGET_ID),
         "expires_in": 7,
         "share_url": "https://elhio.com/s/abc123",
         "media_url": "https://cdn.elhio.com/media/abc.jpg",
-        "task_name": "Deepfake",
+        "target_name": "Deepfake",
         "space_name": "Test Space",
         "result": {
-            "task_id": str(TASK_ID),
+            "target_id": str(TARGET_ID),
             "score": 87,
             "label": "Deepfake",
             "description": "Likely synthetic",
@@ -291,9 +296,9 @@ def space_detail_response(**overrides: Any) -> Dict[str, Any]:
         "predictor_multiplier": 3,
         "max_media_size": 52428800,
         "enabled_media": ["image", "video"],
-        "enabled_tasks": [task_response()],
-        "task_thresholds": [
-            {"task_id": str(TASK_ID), "blur_threshold": 50, "hide_threshold": 80}
+        "enabled_targets": [target_response()],
+        "target_thresholds": [
+            {"target_id": str(TARGET_ID), "blur_threshold": 50, "hide_threshold": 80}
         ],
     }
     payload.update(overrides)
@@ -308,7 +313,7 @@ def page_response(
 
 
 def confirm_response(**overrides: Any) -> Dict[str, Any]:
-    """Build a mock response for confirming an activity."""
+    """Build a mock response for confirming a prediction."""
     payload = create_response()
     payload.pop("upload_data")
     payload["status"] = "processing"
@@ -325,7 +330,7 @@ def isolate_env(tmp_path_factory, monkeypatch):
 
     * exported ``GUARD_*`` variables in the shell running pytest, and
     * a real ``.env`` in the repo — ``find_dotenv`` walks *up* from the cwd, so once a
-      developer creates one for ``scripts/create_activity.py`` it would otherwise leak
+      developer creates one for ``scripts/create_prediction.py`` it would otherwise leak
       into the suite.
 
     Tests that want a ``.env`` write one into the cwd this provides.

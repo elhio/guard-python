@@ -1,12 +1,12 @@
 """
-Low-level bindings for the `/api/v1/runners/` endpoints.
+Low-level bindings for the `/api/v1/runners` endpoints.
 
 A runner is a dedicated compute instance serving one predictor for an organization.
 Listing them supplies the `dedicated_runner_ids` accepted by `Spaces.create`.
 
 Note:
     These routes currently authenticate a *user* rather than a service account. A
-    service-account key will get a 404 here. The API is expected to widen this scope,
+    service-account key will get a 403 here. The API is expected to widen this scope,
     and nothing in the client will need to change when it does.
 """
 
@@ -27,10 +27,12 @@ from .filters import (
 from .models import (
     FILTERABLE_RUNNER_STATUSES,
     Runner,
+    RunnerDeployment,
     RunnerOrder,
     RunnerPage,
     RunnerStatus,
     SortOrder,
+    coerce_enum,
     ensure_bool,
 )
 from .transport import AsyncTransport, SyncTransport
@@ -38,7 +40,7 @@ from .transport import AsyncTransport, SyncTransport
 __all__ = ["AsyncRunners", "Runners"]
 
 #: The base URL path for runner endpoints.
-_BASE = "/api/v1/runners/"
+_BASE = "/api/v1/runners"
 
 #: A type alias for runner statuses.
 StatusLike = Union[RunnerStatus, str]
@@ -140,6 +142,7 @@ class _RunnersBase:
         organization_id: Optional[IdLike],
         is_default: bool,
         dedicated_space_ids: Optional[Sequence[IdLike]],
+        deployment: Union[RunnerDeployment, str] = RunnerDeployment.MANAGED,
     ) -> Dict[str, Any]:
         """
         Build the JSON body for creating a runner.
@@ -151,20 +154,24 @@ class _RunnersBase:
             organization_id: The ID of the organization to own the runner.
             is_default: Whether spaces get this as their default runner.
             dedicated_space_ids: Sequence of space IDs to restrict the runner to.
+            deployment: Whether Elhio runs the runner or you do.
 
         Returns:
             The request body. Unlike spaces, `is_default` is always sent since the API
             accepts it here.
 
         Raises:
-            GuardError: If no organization id is available or `is_default` is not a
-                boolean.
+            GuardError: If no organization id is available, `is_default` is not a
+                boolean, or `deployment` is not a known value.
         """
         payload: Dict[str, Any] = {
             "predictor_id": str(predictor_id),
             "organization_id": self._resolve_organization_id(organization_id),
             # unlike spaces, the API does accept is_default at creation here
             "is_default": ensure_bool(is_default, field="is_default"),
+            "deployment": coerce_enum(
+                deployment, RunnerDeployment, field="deployment"
+            ).value,
         }
         space_ids = id_list(dedicated_space_ids, field="dedicated_space_ids")
         if space_ids is not None:
@@ -299,7 +306,7 @@ class Runners(_RunnersBase):
             GuardNotFoundError: If the runner is unknown or you are not a
                 member of its organization. The API does not distinguish the two.
         """
-        data = self._transport.request("GET", f"{_BASE}{runner_id}")
+        data = self._transport.request("GET", f"{_BASE}/{runner_id}")
         return Runner.model_validate(data)
 
     def create(
@@ -309,6 +316,7 @@ class Runners(_RunnersBase):
         organization_id: Optional[IdLike] = None,
         is_default: bool = False,
         dedicated_space_ids: Optional[Sequence[IdLike]] = None,
+        deployment: Union[RunnerDeployment, str] = RunnerDeployment.MANAGED,
     ) -> Runner:
         """
         Create a runner and start its deployment.
@@ -323,14 +331,17 @@ class Runners(_RunnersBase):
             is_default: Whether spaces get this as their default runner.
             dedicated_space_ids: Restrict the runner to these spaces. They must belong
                 to the same organization. Duplicates are dropped and order is preserved.
+            deployment: `managed` (the default) for a runner Elhio deploys, or
+                `external` for one you run yourself. Only plans that allow external
+                runners can create one.
 
         Returns:
             The created `Runner` with an initial status of `pending`.
 
         Raises:
             GuardError: If a value is invalid. Raised before any request is sent.
-            GuardPaymentRequiredError: If there is no active subscription or the runner
-                limit is reached.
+            GuardPaymentRequiredError: If there is no active subscription, the runner
+                limit is reached, or the plan does not allow external runners.
             GuardConflictError: If a runner with this name already exists here.
             GuardNotFoundError: If the organization, predictor, or space is unknown, or
                 if you do not own the organization.
@@ -346,6 +357,7 @@ class Runners(_RunnersBase):
             organization_id=organization_id,
             is_default=is_default,
             dedicated_space_ids=dedicated_space_ids,
+            deployment=deployment,
         )
         data = self._transport.request("POST", _BASE, json=payload)
         return Runner.model_validate(data)
@@ -368,7 +380,7 @@ class Runners(_RunnersBase):
         """
         # never retried: a replay after a dropped connection would report a confusing
         # 404 for a delete that actually succeeded, or re-trigger a live teardown
-        self._transport.request("DELETE", f"{_BASE}{runner_id}", retry=False)
+        self._transport.request("DELETE", f"{_BASE}/{runner_id}", retry=False)
 
 
 class AsyncRunners(_RunnersBase):
@@ -490,7 +502,7 @@ class AsyncRunners(_RunnersBase):
             GuardNotFoundError: If the runner is unknown or you are not a member of its
                 organization.
         """
-        data = await self._transport.request("GET", f"{_BASE}{runner_id}")
+        data = await self._transport.request("GET", f"{_BASE}/{runner_id}")
         return Runner.model_validate(data)
 
     async def create(
@@ -500,6 +512,7 @@ class AsyncRunners(_RunnersBase):
         organization_id: Optional[IdLike] = None,
         is_default: bool = False,
         dedicated_space_ids: Optional[Sequence[IdLike]] = None,
+        deployment: Union[RunnerDeployment, str] = RunnerDeployment.MANAGED,
     ) -> Runner:
         """
         Create a runner and start its deployment.
@@ -511,14 +524,17 @@ class AsyncRunners(_RunnersBase):
                 client default.
             is_default: Whether spaces get this as their default runner.
             dedicated_space_ids: Sequence of space IDs to restrict the runner to.
+            deployment: `managed` (the default) for a runner Elhio deploys, or
+                `external` for one you run yourself. Only plans that allow external
+                runners can create one.
 
         Returns:
             The created `Runner` with an initial status of `pending`.
 
         Raises:
             GuardError: If a value is invalid. Raised before any request is sent.
-            GuardPaymentRequiredError: If there is no active subscription or the runner
-                limit is reached.
+            GuardPaymentRequiredError: If there is no active subscription, the runner
+                limit is reached, or the plan does not allow external runners.
             GuardConflictError: If a runner with this name already exists here.
             GuardNotFoundError: If the organization, predictor, or space is unknown.
         """
@@ -527,6 +543,7 @@ class AsyncRunners(_RunnersBase):
             organization_id=organization_id,
             is_default=is_default,
             dedicated_space_ids=dedicated_space_ids,
+            deployment=deployment,
         )
         data = await self._transport.request("POST", _BASE, json=payload)
         return Runner.model_validate(data)
@@ -548,4 +565,4 @@ class AsyncRunners(_RunnersBase):
                 details.
         """
         # never retried: see the note on Runners.delete
-        await self._transport.request("DELETE", f"{_BASE}{runner_id}", retry=False)
+        await self._transport.request("DELETE", f"{_BASE}/{runner_id}", retry=False)

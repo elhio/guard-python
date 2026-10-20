@@ -117,7 +117,7 @@ def load_media(
 
     Args:
         source: A path, raw `bytes`, an open binary file, an HTTP or HTTPS URL,
-            or an object with a `media_url` such as an `ActivityResultItem` or `Share`.
+            or an object with a `media_url` such as a `PredictionResultItem` or `Share`.
         media_type: Skips detection when you already know the type.
         filename: Used for detection and for naming a saved file.
 

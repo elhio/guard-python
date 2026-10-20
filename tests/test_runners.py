@@ -17,6 +17,8 @@ from guard_client import (
     GuardNotFoundError,
     GuardPaymentRequiredError,
     GuardServerError,
+    Runner,
+    RunnerDeployment,
     RunnerOrder,
     RunnerStatus,
 )
@@ -32,7 +34,7 @@ from .conftest import (
     runner_response,
 )
 
-RUNNERS_URL = f"{BASE_URL}/api/v1/runners/"
+RUNNERS_URL = f"{BASE_URL}/api/v1/runners"
 OTHER_ORG = "99999999-9999-9999-9999-999999999999"
 
 
@@ -93,7 +95,7 @@ def test_list_parses_terminated_runner(org_client):
 @respx.mock
 def test_get_runner(org_client):
     """Verify that fetching a single runner by ID returns the correct runner object."""
-    route = respx.get(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    route = respx.get(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(200, json=runner_response())
     )
 
@@ -281,8 +283,43 @@ def test_create_minimal(org_client):
         "predictor_id": str(PREDICTOR_ID),
         "organization_id": str(ORG_ID),
         "is_default": False,
+        "deployment": "managed",
     }
     assert runner.status is RunnerStatus.PENDING
+    assert runner.deployment is RunnerDeployment.MANAGED
+
+
+@pytest.mark.parametrize("deployment", [RunnerDeployment.EXTERNAL, "external"])
+@respx.mock
+def test_create_sends_external_deployment(org_client, deployment):
+    """Ensure an external runner is requested as such, by member or by value."""
+    route = respx.post(RUNNERS_URL).mock(
+        return_value=httpx.Response(
+            201, json=runner_response(status="pending", deployment="external")
+        )
+    )
+
+    runner = org_client.runners.create(predictor_id=PREDICTOR_ID, deployment=deployment)
+
+    assert body_of(route)["deployment"] == "external"
+    assert runner.deployment is RunnerDeployment.EXTERNAL
+
+
+def test_create_rejects_unknown_deployment(org_client):
+    """Verify an unknown deployment is refused before any request is sent."""
+    with respx.mock(assert_all_called=False) as router:
+        route = router.post(RUNNERS_URL)
+        with pytest.raises(GuardError, match="deployment"):
+            org_client.runners.create(predictor_id=PREDICTOR_ID, deployment="cloud")
+        assert not route.called
+
+
+def test_runner_without_deployment_reads_as_managed():
+    """Ensure a response from before the field existed still parses."""
+    payload = runner_response()
+    payload.pop("deployment")
+
+    assert Runner.model_validate(payload).deployment is RunnerDeployment.MANAGED
 
 
 @respx.mock
@@ -356,6 +393,11 @@ def test_create_without_organization_raises(client):
     [
         (402, GuardPaymentRequiredError, "Organization needs active subscription"),
         (402, GuardPaymentRequiredError, "Organization has reached limit of 3 runners"),
+        (
+            402,
+            GuardPaymentRequiredError,
+            "Organization's plan does not allow external runners",
+        ),
         (409, GuardConflictError, "A runner with this name already exists"),
         (404, GuardNotFoundError, "Predictor not found"),
     ],
@@ -379,7 +421,7 @@ def test_create_maps_server_errors(org_client, status, expected, detail):
 @respx.mock
 def test_delete_returns_none(org_client):
     """Verify that successfully deleting a runner returns None."""
-    route = respx.delete(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    route = respx.delete(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(
             200, json={"message": "Runner deleted successfully"}
         )
@@ -396,7 +438,7 @@ def test_delete_is_never_retried(monkeypatch):
     actions.
     """
     monkeypatch.setattr("guard_client.transport.time.sleep", lambda _: None)
-    route = respx.delete(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    route = respx.delete(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(503, json={"detail": "unavailable"})
     )
 
@@ -416,7 +458,7 @@ def test_delete_is_never_retried(monkeypatch):
 def test_delete_not_retried_on_connection_error(monkeypatch):
     """Ensure deletion requests are not retried even on connection errors."""
     monkeypatch.setattr("guard_client.transport.time.sleep", lambda _: None)
-    route = respx.delete(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    route = respx.delete(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         side_effect=httpx.ConnectError("dropped")
     )
 
@@ -435,7 +477,7 @@ def test_delete_not_retried_on_connection_error(monkeypatch):
 @respx.mock
 def test_delete_maps_not_found(org_client):
     """Verify that a 404 response on deletion maps to a GuardNotFoundError."""
-    respx.delete(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    respx.delete(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(404, json={"detail": "Runner not found"})
     )
 
@@ -483,7 +525,7 @@ async def test_async_list_and_get(async_org_client):
             200, json=page_response([runner_response()], count=1)
         )
     )
-    respx.get(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    respx.get(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(200, json=runner_response())
     )
 
@@ -500,7 +542,7 @@ async def test_async_create_and_delete(async_org_client):
     create = respx.post(RUNNERS_URL).mock(
         return_value=httpx.Response(200, json=runner_response(status="pending"))
     )
-    delete = respx.delete(f"{RUNNERS_URL}{RUNNER_ID}").mock(
+    delete = respx.delete(f"{RUNNERS_URL}/{RUNNER_ID}").mock(
         return_value=httpx.Response(200, json={"message": "ok"})
     )
 

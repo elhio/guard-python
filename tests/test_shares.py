@@ -1,5 +1,5 @@
 """
-Tests for the activity-shares resource: read and create.
+Tests for the prediction-shares resource: read and create.
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ import pytest
 import respx
 
 from guard_client import (
-    ActivityDetail,
-    ActivityResultItem,
     DetectionResult,
     Engine,
     GuardAPIError,
@@ -23,24 +21,26 @@ from guard_client import (
     GuardError,
     GuardNotFoundError,
     GuardServerError,
+    PredictionDetail,
+    PredictionResultItem,
     Share,
     ShareOrder,
 )
 
 from .conftest import (
-    ACTIVITY_ID,
     API_KEY,
     BASE_URL,
     ORG_ID,
+    PREDICTION_ID,
     SHARE_ID,
-    TASK_ID,
+    TARGET_ID,
     USER_ID,
     detail_response,
     page_response,
     share_response,
 )
 
-SHARES_URL = f"{BASE_URL}/api/v1/activities/shares/"
+SHARES_URL = f"{BASE_URL}/api/v1/predictions/shares"
 
 
 def params_of(route):
@@ -57,8 +57,10 @@ def cloud_result(**overrides):
     """Build a mock DetectionResult representing a completed cloud analysis."""
     payload = {
         "engine": Engine.CLOUD,
-        "activity_id": ACTIVITY_ID,
-        "results": [ActivityResultItem(task_id=TASK_ID, score=87, label="Deepfake")],
+        "prediction_id": PREDICTION_ID,
+        "results": [
+            PredictionResultItem(target_id=TARGET_ID, score=87, label="Deepfake")
+        ],
     }
     payload.update(overrides)
     return DetectionResult(**payload)
@@ -82,9 +84,9 @@ def test_list_parses_shares_and_nested_result(client):
     share = page[0]
     assert share.id == SHARE_ID
     assert share.share_url == "https://elhio.com/s/abc123"
-    assert share.task_name == "Deepfake"
+    assert share.target_name == "Deepfake"
     assert share.expires_in == 7
-    assert isinstance(share.result, ActivityResultItem)
+    assert isinstance(share.result, PredictionResultItem)
     assert share.result.score == 87
     assert share.result.label == "Deepfake"
 
@@ -98,20 +100,20 @@ def test_list_url_has_trailing_slash(client):
 
     client.shares.list()
 
-    assert route.calls.last.request.url.path == "/api/v1/activities/shares/"
+    assert route.calls.last.request.url.path == "/api/v1/predictions/shares"
 
 
 @respx.mock
 def test_get_share(client):
     """Verify that fetching a single share by ID returns the expected share object."""
-    route = respx.get(f"{SHARES_URL}{SHARE_ID}").mock(
+    route = respx.get(f"{SHARES_URL}/{SHARE_ID}").mock(
         return_value=httpx.Response(200, json=share_response())
     )
 
     share = client.shares.get(SHARE_ID)
 
     assert route.called
-    assert route.calls.last.request.url.path == f"/api/v1/activities/shares/{SHARE_ID}"
+    assert route.calls.last.request.url.path == f"/api/v1/predictions/shares/{SHARE_ID}"
     assert share.id == SHARE_ID
 
 
@@ -244,11 +246,11 @@ def test_create_minimal(client):
         return_value=httpx.Response(200, json=share_response())
     )
 
-    share = client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
+    share = client.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
 
     assert body_of(route) == {
-        "activity_id": str(ACTIVITY_ID),
-        "task_id": str(TASK_ID),
+        "prediction_id": str(PREDICTION_ID),
+        "target_id": str(TARGET_ID),
     }
     assert share.share_url == "https://elhio.com/s/abc123"
 
@@ -260,9 +262,9 @@ def test_create_url_has_trailing_slash(client):
         return_value=httpx.Response(200, json=share_response())
     )
 
-    client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
+    client.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
 
-    assert route.calls.last.request.url.path == "/api/v1/activities/shares/"
+    assert route.calls.last.request.url.path == "/api/v1/predictions/shares"
 
 
 @respx.mock
@@ -272,7 +274,9 @@ def test_create_sends_expires_in(client):
         return_value=httpx.Response(200, json=share_response(expires_in=3))
     )
 
-    share = client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID, expires_in=3)
+    share = client.shares.create(
+        prediction_id=PREDICTION_ID, target_id=TARGET_ID, expires_in=3
+    )
 
     assert body_of(route)["expires_in"] == 3
     assert share.expires_in == 3
@@ -285,7 +289,7 @@ def test_create_omits_unset_expires_in(client):
         return_value=httpx.Response(200, json=share_response())
     )
 
-    client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
+    client.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
 
     assert "expires_in" not in body_of(route)
 
@@ -300,7 +304,9 @@ def test_create_rejects_out_of_range_expires_in(client, bad):
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
 
     with pytest.raises(GuardError, match="Expected between 1 and 7 days"):
-        client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID, expires_in=bad)
+        client.shares.create(
+            prediction_id=PREDICTION_ID, target_id=TARGET_ID, expires_in=bad
+        )
 
     assert not route.called
 
@@ -312,7 +318,9 @@ def test_create_rejects_non_int_expires_in(client, bad):
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
 
     with pytest.raises(GuardError, match="Expected an integer number of days"):
-        client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID, expires_in=bad)
+        client.shares.create(
+            prediction_id=PREDICTION_ID, target_id=TARGET_ID, expires_in=bad
+        )
 
     assert not route.called
 
@@ -320,7 +328,8 @@ def test_create_rejects_non_int_expires_in(client, bad):
 @respx.mock
 def test_create_for_from_detection_result(client):
     """
-    Verify create_for correctly extracts activity and task IDs from a DetectionResult.
+    Verify create_for correctly extracts prediction and target IDs from a
+    DetectionResult.
     """
     route = respx.post(SHARES_URL).mock(
         return_value=httpx.Response(200, json=share_response())
@@ -330,39 +339,39 @@ def test_create_for_from_detection_result(client):
     client.shares.create_for(result, result.results[0], expires_in=1)
 
     assert body_of(route) == {
-        "activity_id": str(ACTIVITY_ID),
-        "task_id": str(TASK_ID),
+        "prediction_id": str(PREDICTION_ID),
+        "target_id": str(TARGET_ID),
         "expires_in": 1,
     }
 
 
 @respx.mock
-def test_create_for_from_activity_detail(client):
-    """Verify create_for correctly extracts IDs from an ActivityDetail object."""
+def test_create_for_from_prediction_detail(client):
+    """Verify create_for correctly extracts IDs from a PredictionDetail object."""
     route = respx.post(SHARES_URL).mock(
         return_value=httpx.Response(200, json=share_response())
     )
-    detail = ActivityDetail.model_validate(detail_response())
+    detail = PredictionDetail.model_validate(detail_response())
 
     client.shares.create_for(detail, detail.result_payload.results[0])
 
     assert body_of(route) == {
-        "activity_id": str(ACTIVITY_ID),
-        "task_id": str(TASK_ID),
+        "prediction_id": str(PREDICTION_ID),
+        "target_id": str(TARGET_ID),
     }
 
 
 @respx.mock
 def test_create_for_rejects_foreign_item(client):
     """
-    Ensure create_for rejects an ActivityResultItem that does not belong to the source
-    activity.
+    Ensure create_for rejects a PredictionResultItem that does not belong to the source
+    prediction.
     """
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
     result = cloud_result()
-    stranger = ActivityResultItem(task_id=uuid4(), score=1, label="Other")
+    stranger = PredictionResultItem(target_id=uuid4(), score=1, label="Other")
 
-    with pytest.raises(GuardError, match="is not part of this activity's results"):
+    with pytest.raises(GuardError, match="is not part of this prediction's results"):
         client.shares.create_for(result, stranger)
 
     assert not route.called
@@ -374,7 +383,7 @@ def test_create_for_rejects_local_result(client):
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
     local = DetectionResult(
         engine=Engine.LOCAL,
-        results=[ActivityResultItem(task_id=TASK_ID, score=10, label="safe")],
+        results=[PredictionResultItem(target_id=TARGET_ID, score=10, label="safe")],
     )
 
     with pytest.raises(GuardError, match="local engine"):
@@ -384,15 +393,15 @@ def test_create_for_rejects_local_result(client):
 
 
 @respx.mock
-def test_create_for_rejects_activity_without_results(client):
+def test_create_for_rejects_prediction_without_results(client):
     """
-    Ensure create_for raises an error if the activity detail has no result payload.
+    Ensure create_for raises an error if the prediction detail has no result payload.
     """
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
-    detail = ActivityDetail.model_validate(
+    detail = PredictionDetail.model_validate(
         detail_response(status="processing", result_payload=None)
     )
-    item = ActivityResultItem(task_id=TASK_ID, score=1, label="x")
+    item = PredictionResultItem(target_id=TARGET_ID, score=1, label="x")
 
     with pytest.raises(GuardError, match="available: none"):
         client.shares.create_for(detail, item)
@@ -403,11 +412,15 @@ def test_create_for_rejects_activity_without_results(client):
 @pytest.mark.parametrize(
     ("status", "expected", "detail"),
     [
-        (409, GuardConflictError, "Cannot create share for an activity multiple times"),
-        (404, GuardNotFoundError, "Activity not found"),
+        (
+            409,
+            GuardConflictError,
+            "Cannot create share for a prediction multiple times",
+        ),
+        (404, GuardNotFoundError, "Prediction not found"),
         (404, GuardNotFoundError, "Associated media file no longer exists"),
-        (400, GuardAPIError, "Invalid task"),
-        (400, GuardAPIError, "No media key associated with this task"),
+        (400, GuardAPIError, "Invalid target"),
+        (400, GuardAPIError, "No media key associated with this target"),
     ],
 )
 @respx.mock
@@ -421,7 +434,7 @@ def test_create_maps_server_errors(client, status, expected, detail):
     )
 
     with pytest.raises(expected) as exc_info:
-        client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
+        client.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
 
     assert exc_info.value.status_code == status
     assert detail in str(exc_info.value)
@@ -440,7 +453,7 @@ def test_create_is_never_retried(monkeypatch):
     retrying = GuardClient(api_key=API_KEY, base_url=BASE_URL, max_retries=3)
     try:
         with pytest.raises(GuardServerError):
-            retrying.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
+            retrying.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
     finally:
         retrying.close()
 
@@ -455,16 +468,16 @@ def test_iter_all_walks_pages(client):
             httpx.Response(
                 200,
                 json=page_response(
-                    [share_response(task_name=f"s{i}") for i in range(2)], 3
+                    [share_response(target_name=f"s{i}") for i in range(2)], 3
                 ),
             ),
             httpx.Response(
-                200, json=page_response([share_response(task_name="s2")], 3)
+                200, json=page_response([share_response(target_name="s2")], 3)
             ),
         ]
     )
 
-    names = [s.task_name for s in client.shares.iter_all(page_size=2)]
+    names = [s.target_name for s in client.shares.iter_all(page_size=2)]
 
     assert names == ["s0", "s1", "s2"]
     assert route.call_count == 2
@@ -478,7 +491,7 @@ async def test_async_list_and_get(async_client):
             200, json=page_response([share_response()], count=1)
         )
     )
-    respx.get(f"{SHARES_URL}{SHARE_ID}").mock(
+    respx.get(f"{SHARES_URL}/{SHARE_ID}").mock(
         return_value=httpx.Response(200, json=share_response())
     )
 
@@ -498,10 +511,10 @@ async def test_async_create_and_create_for(async_client):
         return_value=httpx.Response(200, json=share_response())
     )
 
-    await async_client.shares.create(activity_id=ACTIVITY_ID, task_id=TASK_ID)
-    assert body_of(route)["activity_id"] == str(ACTIVITY_ID)
+    await async_client.shares.create(prediction_id=PREDICTION_ID, target_id=TARGET_ID)
+    assert body_of(route)["prediction_id"] == str(PREDICTION_ID)
 
-    detail = ActivityDetail.model_validate(detail_response())
+    detail = PredictionDetail.model_validate(detail_response())
     share = await async_client.shares.create_for(
         detail, detail.result_payload.results[0], expires_in=2
     )
@@ -513,14 +526,14 @@ async def test_async_create_and_create_for(async_client):
 @respx.mock
 async def test_async_create_for_rejects_foreign_item(async_client):
     """
-    Ensure async create_for rejects an ActivityResultItem from a different activity
+    Ensure async create_for rejects a PredictionResultItem from a different prediction
     before making a call.
     """
     route = respx.post(SHARES_URL).mock(return_value=httpx.Response(200))
     result = cloud_result()
-    stranger = ActivityResultItem(task_id=uuid4(), score=1, label="Other")
+    stranger = PredictionResultItem(target_id=uuid4(), score=1, label="Other")
 
-    with pytest.raises(GuardError, match="is not part of this activity's results"):
+    with pytest.raises(GuardError, match="is not part of this prediction's results"):
         await async_client.shares.create_for(result, stranger)
 
     assert not route.called

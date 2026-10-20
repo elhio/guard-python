@@ -22,7 +22,7 @@ and test locally without an API key. Both return the exact same strictly typed m
 **⚡ Sync & Async Support:** Natively supports both synchronous operations and `async/await` out of the box, making it 
 a perfect fit for high-performance frameworks like FastAPI.
 
-**🛠️ Comprehensive API Bindings:** Typed bindings for the entire API including spaces, activities, tasks, predictors, 
+**🛠️ Comprehensive API Bindings:** Typed bindings for the entire API including spaces, predictions, targets, predictors, 
 runners, shares, and reactions. We also include token estimation, so you can price a job before you spend on it.
 
 ## Installation
@@ -51,10 +51,10 @@ pip install "guard-client[local]"
 
 ## Quick Start
 
-The `analyze()` method runs the entire detection lifecycle for you. It creates an activity, uploads the media, confirms 
+The `analyze()` method runs the entire detection lifecycle for you. It creates a prediction, uploads the media, confirms 
 the upload, polls until processing finishes, and returns the result.
 
-You will need an **API key** and a space to create the activity in. You can create a new access token in the **Elhio 
+You will need an **API key** and a space to create the prediction in. You can create a new access token in the **Elhio 
 dashboard** (under Settings > Account Settings > Access Tokens). If you do not know your space ID yet, you can 
 ask the API for it. The `spaces.list()` method returns every space the key can see.
 
@@ -66,7 +66,7 @@ with GuardClient(api_key="your_api_key_here") as client:
     # 1. Get an available space
     space = client.spaces.list()[0]
 
-    # 2. Analyze the media (creates activity, uploads, and polls for results)
+    # 2. Analyze the media (creates prediction, uploads, and polls for results)
     result = client.analyze("photo.jpg", space_id=space.id)
 
     # 3. Print the detection results
@@ -74,7 +74,7 @@ with GuardClient(api_key="your_api_key_here") as client:
         print(f"{item.label}: {item.score}/100")
 
 # AI-Generated: 87/100
-# Violence: 2/100
+# Violent: 2/100
 # Explicit: 1/100
 ```
 
@@ -110,11 +110,11 @@ with GuardClient(engine="local") as client:
         print(f"{item.label}: {item.score}/100")
 
 # AI-Generated: 90/100
-# Violence: 2/100
+# Violent: 2/100
 # Explicit: 1/100
 ```
 
-Two fields easily tell the engines apart. The `result.activity_id` is `None` because a local run creates nothing 
+Two fields easily tell the engines apart. The `result.prediction_id` is `None` because a local run creates nothing 
 server-side, meaning there is nothing to share or react to. The `result.detected` field carries the engine's own 
 per-category threshold verdict, which the cloud API does not report. Reading it means you are opting into extra detail, 
 not into a different data shape.

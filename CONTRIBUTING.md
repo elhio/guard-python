@@ -42,7 +42,7 @@ The `docs` group is also excluded since it is only used for building documentati
 
 To keep the repository organized, please use descriptive branch names based on the type of work you are doing:
 
-* **Features:** `feature/activity-pagination` or `feat/share-expiry-filters`
+* **Features:** `feature/prediction-pagination` or `feat/share-expiry-filters`
 * **Bug Fixes:** `fix/presigned-upload-retry`
 * **Documentation:** `docs/update-readme`
 
@@ -127,7 +127,7 @@ you are finished, running `uv sync` returns you to the default environment.
 ### Testing against a Live API
 
 The test suite is fully mocked and never touches the network. To exercise the real lifecycle end-to-end, create an 
-activity. **This runs against production by default and spends real tokens** — one activity per run. You can point it 
+prediction. **This runs against production by default and spends real tokens** — one prediction per run. You can point it 
 elsewhere using the `GUARD_BASE_URL` environment variable.
 
 ```bash
@@ -135,15 +135,15 @@ export GUARD_API_KEY=... # a token_raw from POST /api/v1/tokens/
 export GUARD_SPACE_ID=...
 
 # see the space and the projected cost, creating nothing
-uv run python scripts/create_activity.py path/to/photo.jpg --list-only
+uv run python scripts/create_prediction.py path/to/photo.jpg --list-only
 
-uv run python scripts/create_activity.py path/to/photo.jpg
+uv run python scripts/create_prediction.py path/to/photo.jpg
 
 # against a local dev server instead
-GUARD_BASE_URL=http://localhost:8000 uv run python scripts/create_activity.py path/to/photo.jpg
+GUARD_BASE_URL=http://localhost:8000 uv run python scripts/create_prediction.py path/to/photo.jpg
 
 # on-device, which needs no space, no network and no tokens
-uv run python scripts/create_activity.py path/to/photo.jpg --engine local
+uv run python scripts/create_prediction.py path/to/photo.jpg --engine local
 ```
 
 Credentials resolve the same way everywhere in this client: explicit arguments, followed by `GUARD_* `environment 
@@ -157,15 +157,15 @@ If you do not have a `space_id` yet, four more scripts can help:
 # list the spaces your key can see, with their ids
 uv run python scripts/list_spaces.py
 
-# the two ids a new space needs: a predictor, and optionally some tasks
+# the two ids a new space needs: a predictor, and optionally some targets
 uv run python scripts/list_predictors.py
-uv run python scripts/list_tasks.py --predictor-id <uuid>
+uv run python scripts/list_targets.py --predictor-id <uuid>
 
-# walk predictors -> tasks -> create a space (--list-only creates nothing)
+# walk predictors -> targets -> create a space (--list-only creates nothing)
 uv run python scripts/create_space.py --list-only
 
 # and then, with a space id in hand, analyze something in it
-uv run python scripts/create_activity.py path/to/photo.jpg --list-only
+uv run python scripts/create_prediction.py path/to/photo.jpg --list-only
 ```
 
 ## What to Watch Out For
@@ -190,8 +190,8 @@ exceptions do not subclass it, so `local.py` translates each one before it escap
 that does not come from `guard_local` propagates untouched. This is intentional, as a bug in the engine should surface 
 exactly as the bug it is.
 
-**The task labels are a public API.** `_adapt` derives each local result's id from `uuid5(namespace, label)`. Renaming a 
-label silently changes the ID that callers rely on. These labels also mirror the tasks the cloud API seeds, allowing 
+**The target labels are a public API.** `_adapt` derives each local result's id from `uuid5(namespace, label)`. Renaming a 
+label silently changes the ID that callers rely on. These labels also mirror the targets the cloud API seeds, allowing 
 users to test locally and then route to the cloud without changing their code.
 
 **Engine scores must be floats between `0.0` and `1.0`.** The `_score_to_int` function rescales by value rather than by 

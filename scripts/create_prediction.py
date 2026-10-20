@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Create one activity after showing the space and its estimated cost.
+Create one prediction after showing the space and its estimated cost.
 
 This script runs the complete detection lifecycle through `analyze()`. It creates the
-activity, uploads the media, confirms it, polls until completion, and prints the final
+prediction, uploads the media, confirms it, polls until completion, and prints the final
 scores. Be aware that running this against a live API will spend real tokens. You can
 pass `--list-only` to see the cost estimate without creating anything, or use
 `--engine local` to run the detection on your device for free.
@@ -15,14 +15,14 @@ media file is taken from the first argument or the `GUARD_MEDIA` environment var
 Example:
     ```bash
     # preview the cost without creating anything
-    uv run python scripts/create_activity.py photo.jpg --list-only
+    uv run python scripts/create_prediction.py photo.jpg --list-only
 
-    # run the activity against the cloud API
-    uv run python scripts/create_activity.py photo.jpg
-    uv run python scripts/create_activity.py photo.jpg --space-id <uuid>
+    # run the prediction against the cloud API
+    uv run python scripts/create_prediction.py photo.jpg
+    uv run python scripts/create_prediction.py photo.jpg --space-id <uuid>
 
     # run on-device instead, which requires no space and consumes no tokens
-    uv run python scripts/create_activity.py photo.jpg --engine local
+    uv run python scripts/create_prediction.py photo.jpg --engine local
     ```
 """
 
@@ -41,8 +41,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("media", nargs="?", help="media file; defaults to GUARD_MEDIA")
     parser.add_argument("--space-id", help="the space to run in; or GUARD_SPACE_ID")
-    parser.add_argument("--user-id", help="create a user-owned activity")
-    parser.add_argument("--account-id", help="create a service-account-owned activity")
+    parser.add_argument("--user-id", help="create a user-owned prediction")
+    parser.add_argument(
+        "--account-id", help="create a service-account-owned prediction"
+    )
     parser.add_argument(
         "--engine", choices=["cloud", "local"], help="client default: cloud"
     )
@@ -87,13 +89,13 @@ def print_media(path: Path) -> None:
 def print_space(client: GuardClient, space_id: str, media: Path) -> None:
     """Show the space this will run in, and what it is expected to cost."""
     space = client.spaces.get(space_id)
-    tasks = ", ".join(task.name for task in space.enabled_tasks) or "-"
+    targets = ", ".join(target.name for target in space.enabled_targets) or "-"
 
     print(f"\nSpace: {space.name}")
     print(f"  id         {space.id}")
     print(f"  predictor  {space.predictor_name} (x{space.predictor_multiplier})")
     print(f"  max media  {space.max_media_size or '-'} bytes")
-    print(f"  tasks      {tasks}")
+    print(f"  targets      {targets}")
 
     print(f"\nEstimated cost: {client.estimate_tokens(media, space_id=space_id)}")
     print("  An estimate: the API reserves the minimum, payed_tokens is final.")
@@ -133,7 +135,7 @@ def main() -> int:
             )
 
             print(f"\nDone: engine={result.engine.value}")
-            print(f"  activity  {result.activity_id or '-'}")
+            print(f"  prediction  {result.prediction_id or '-'}")
             for item in result.results:
                 print(f"  - {item.label}: {item.score}/100")
             if not result.results:

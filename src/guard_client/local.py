@@ -29,11 +29,11 @@ from .exceptions import (
 )
 from .media import MediaSource, resolve_media
 from .models import (
-    ActivityResultItem,
     DetectionMatch,
     DetectionResult,
     Engine,
     MediaType,
+    PredictionResultItem,
 )
 
 __all__ = ["LocalEngine", "LocalRunner"]
@@ -44,10 +44,10 @@ _INSTALL_HINT = (
     '    pip install "guard-client[local]"'
 )
 
-#: A fixed UUID namespace used to derive stable task IDs for local runs. Local runs have
-#: no server-assigned task IDs, so we derive them from the label. A fixed namespace
-#: keeps them reproducible across processes and releases.
-_LOCAL_TASK_NAMESPACE = UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+#: A fixed UUID namespace used to derive stable target IDs for local runs. Local runs
+#: have no server-assigned target IDs, so we derive them from the label. A fixed
+#: namespace keeps them reproducible across processes and releases.
+_LOCAL_TARGET_NAMESPACE = UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 
 #: Maps the exception name from `guard_local.exceptions` to the `GuardError` raised in
 #: its place. The engine's hierarchy derives from nothing here, so without this map an
@@ -248,7 +248,7 @@ def _matches(value: Any) -> Optional[List[DetectionMatch]]:
     return matches
 
 
-def _adapt(raw: Any) -> List[ActivityResultItem]:
+def _adapt(raw: Any) -> List[PredictionResultItem]:
     """
     Turn raw engine output into the items the cloud API returns.
 
@@ -261,31 +261,32 @@ def _adapt(raw: Any) -> List[ActivityResultItem]:
         raw: The raw output returned by the engine.
 
     Returns:
-        A list of standardized `ActivityResultItem` objects.
+        A list of standardized `PredictionResultItem` objects.
     """
     if raw is None:
         return []
     entries = raw if isinstance(raw, (list, tuple)) else [raw]
 
-    items: List[ActivityResultItem] = []
+    items: List[PredictionResultItem] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         label = str(entry.get("label") or entry.get("status") or "unknown")
-        raw_task_id = entry.get("task_id")
+        # the engine may still name it `task_id`, the API's name before the rename
+        raw_target_id = entry.get("target_id") or entry.get("task_id")
         try:
-            task_id = (
-                UUID(str(raw_task_id))
-                if raw_task_id
-                else uuid5(_LOCAL_TASK_NAMESPACE, label)
+            target_id = (
+                UUID(str(raw_target_id))
+                if raw_target_id
+                else uuid5(_LOCAL_TARGET_NAMESPACE, label)
             )
         except ValueError:
-            task_id = uuid5(_LOCAL_TASK_NAMESPACE, label)
+            target_id = uuid5(_LOCAL_TARGET_NAMESPACE, label)
 
         detected = entry.get("detected")
         items.append(
-            ActivityResultItem(
-                task_id=task_id,
+            PredictionResultItem(
+                target_id=target_id,
                 score=_score_to_int(entry.get("score")),
                 label=label,
                 description=entry.get("description"),
@@ -353,8 +354,8 @@ class LocalRunner:
             filename: Used for detection and error messages.
 
         Returns:
-            A `DetectionResult` with `engine=LOCAL` and no `activity_id` because nothing
-            was created server-side.
+            A `DetectionResult` with `engine=LOCAL` and no `prediction_id` because
+            nothing was created server-side.
 
         Raises:
             LocalEngineNotInstalledError: The optional engine is unavailable.
@@ -371,7 +372,7 @@ class LocalRunner:
             engine = self._ensure_engine()
             raw = engine.analyze(data, resolved_type.value)
         return DetectionResult(
-            engine=Engine.LOCAL, results=_adapt(raw), activity_id=None
+            engine=Engine.LOCAL, results=_adapt(raw), prediction_id=None
         )
 
     async def analyze_async(
@@ -418,5 +419,5 @@ class LocalRunner:
                 raw = await asyncio.to_thread(engine.analyze, data, resolved_type.value)
 
         return DetectionResult(
-            engine=Engine.LOCAL, results=_adapt(raw), activity_id=None
+            engine=Engine.LOCAL, results=_adapt(raw), prediction_id=None
         )

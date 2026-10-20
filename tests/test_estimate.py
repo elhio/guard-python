@@ -66,7 +66,7 @@ def test_per_call_space_id_overrides_the_default(client):
 @respx.mock
 def test_missing_multiplier_and_space_raises_before_any_call():
     """
-    Ensure an error is raised before network activity if both multiplier and space are
+    Ensure an error is raised before network prediction if both multiplier and space are
     missing.
     """
     route = respx.get(SPACE_URL).mock(return_value=httpx.Response(200))

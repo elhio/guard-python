@@ -15,12 +15,10 @@ with GuardClient(api_key="...", space_id="...") as client:
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .activities import Activities, AsyncActivities
 from .client import AsyncGuardClient, GuardClient
 from .display import BROWSER_RENDERABLE, load_media, save, show
 from .env import DEFAULT_ENV_FILE, ENV_FILE_VAR, EnvSource, read_env_file
 from .exceptions import (
-    ActivityFailedError,
     GuardAPIError,
     GuardAuthError,
     GuardConflictError,
@@ -37,27 +35,28 @@ from .exceptions import (
     GuardUploadError,
     GuardValidationError,
     LocalEngineNotInstalledError,
+    PredictionFailedError,
     UnsupportedMediaTypeError,
 )
 from .filters import MAX_HISTORY, MAX_LIMIT
 from .media import SUPPORTED_MEDIA_TYPES, MediaSource
 from .models import (
     FILTERABLE_RUNNER_STATUSES,
-    Activity,
-    ActivityCreateResponse,
-    ActivityDetail,
-    ActivityOrder,
-    ActivityPage,
-    ActivityResult,
-    ActivityResultItem,
-    ActivityStatus,
-    ActivityStatusResponse,
     DetectionMatch,
     DetectionResult,
     Engine,
     MediaCategory,
     MediaType,
     Page,
+    Prediction,
+    PredictionCreateResponse,
+    PredictionDetail,
+    PredictionOrder,
+    PredictionPage,
+    PredictionResult,
+    PredictionResultItem,
+    PredictionStatus,
+    PredictionStatusResponse,
     Predictor,
     PredictorOrder,
     PredictorPage,
@@ -65,6 +64,7 @@ from .models import (
     PresignedUploadData,
     Reaction,
     Runner,
+    RunnerDeployment,
     RunnerOrder,
     RunnerPage,
     RunnerStatus,
@@ -79,18 +79,19 @@ from .models import (
     SpacePage,
     SpaceStatus,
     SpaceThresholds,
-    Task,
-    TaskOrder,
-    TaskPage,
-    TaskStatus,
+    Target,
+    TargetOrder,
+    TargetPage,
+    TargetStatus,
 )
+from .predictions import AsyncPredictions, Predictions
 from .predictors import AsyncPredictors, Predictors
 from .probe import MediaInfo, probe_media
 from .reactions import AsyncReactions, Reactions
 from .runners import AsyncRunners, Runners
 from .shares import AsyncShares, Shares
 from .spaces import AsyncSpaces, Spaces
-from .tasks import AsyncTasks, Tasks
+from .targets import AsyncTargets, Targets
 from .tokens import (
     MAX_LONG_SIDE,
     RESOLUTION_TIERS,
@@ -119,14 +120,14 @@ __all__ = [
     "SUPPORTED_MEDIA_TYPES",
     "GuardClient",
     "AsyncGuardClient",
-    "Activities",
-    "AsyncActivities",
+    "Predictions",
+    "AsyncPredictions",
     "Spaces",
     "AsyncSpaces",
     "Predictors",
     "AsyncPredictors",
-    "Tasks",
-    "AsyncTasks",
+    "Targets",
+    "AsyncTargets",
     "Runners",
     "AsyncRunners",
     "Reactions",
@@ -142,15 +143,15 @@ __all__ = [
     "frames_for",
     "probe_media",
     "tier_for",
-    "Activity",
-    "ActivityCreateResponse",
-    "ActivityDetail",
-    "ActivityOrder",
-    "ActivityPage",
-    "ActivityResult",
-    "ActivityResultItem",
-    "ActivityStatus",
-    "ActivityStatusResponse",
+    "Prediction",
+    "PredictionCreateResponse",
+    "PredictionDetail",
+    "PredictionOrder",
+    "PredictionPage",
+    "PredictionResult",
+    "PredictionResultItem",
+    "PredictionStatus",
+    "PredictionStatusResponse",
     "DetectionMatch",
     "DetectionResult",
     "Engine",
@@ -165,6 +166,7 @@ __all__ = [
     "PresignedUploadData",
     "Reaction",
     "Runner",
+    "RunnerDeployment",
     "RunnerOrder",
     "RunnerPage",
     "RunnerStatus",
@@ -180,12 +182,12 @@ __all__ = [
     "SpacePage",
     "SpaceStatus",
     "SpaceThresholds",
-    "Task",
+    "Target",
     "TokenEstimate",
-    "TaskOrder",
-    "TaskPage",
-    "TaskStatus",
-    "ActivityFailedError",
+    "TargetOrder",
+    "TargetPage",
+    "TargetStatus",
+    "PredictionFailedError",
     "GuardAPIError",
     "GuardAuthError",
     "GuardConflictError",

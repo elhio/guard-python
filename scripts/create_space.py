@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Create a space after showing the available predictors and tasks.
+Create a space after showing the available predictors and targets.
 
-A space needs a predictor and optionally a set of tasks. This script walks through the
-entire flow. It lists the predictors, lists the tasks for the chosen predictor, creates
-the space, and prints the new space ID.
+A space needs a predictor and optionally a set of targets. This script walks through the
+entire flow. It lists the predictors, lists the targets for the chosen predictor,
+creates the space, and prints the new space ID.
 
 Only GUARD_API_KEY is required. Everything else resolves through the standard client
 precedence using arguments, the environment, or a `.env` file.
@@ -44,14 +44,14 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--public", action="store_true", help="make the space public")
     parser.add_argument(
-        "--all-tasks",
+        "--all-targets",
         action="store_true",
-        help="enable every task the predictor supports (default: none)",
+        help="enable every target the predictor supports (default: none)",
     )
     parser.add_argument(
         "--list-only",
         action="store_true",
-        help="print predictors and tasks, then exit without creating anything",
+        help="print predictors and targets, then exit without creating anything",
     )
     return parser.parse_args()
 
@@ -74,12 +74,12 @@ def main() -> int:
                 print(f"  {predictor.id}  {predictor.name:28} media={media}")
 
             predictor_id = args.predictor_id or str(predictors[0].id)
-            tasks = client.tasks.list(predictor_id=predictor_id)
+            targets = client.targets.list(predictor_id=predictor_id)
 
-            print(f"\nTasks for predictor {predictor_id}:")
-            for task in tasks:
-                print(f"  {task.id}  {task.name}")
-            if not tasks:
+            print(f"\nTargets for predictor {predictor_id}:")
+            for target in targets:
+                print(f"  {target.id}  {target.name}")
+            if not targets:
                 print("  (none)")
 
             if args.list_only:
@@ -90,7 +90,7 @@ def main() -> int:
                 print("\nPass --name to create a space.", file=sys.stderr)
                 return 1
 
-            task_ids = [t.id for t in tasks] if args.all_tasks else None
+            target_ids = [t.id for t in targets] if args.all_targets else None
             print(f"\nCreating space {args.name!r}...")
 
             space = client.spaces.create(
@@ -100,13 +100,13 @@ def main() -> int:
                 is_public=args.public,
                 user_id=args.user_id,
                 organization_id=args.organization_id,
-                enabled_task_ids=task_ids,
+                enabled_target_ids=target_ids,
             )
 
             print(f"\nCreated: {space.id}")
             print(f"  name    {space.name}")
             print(f"  public  {space.is_public}")
-            print(f"  tasks   {', '.join(space.enabled_task_names) or '-'}")
+            print(f"  targets   {', '.join(space.enabled_target_names) or '-'}")
             print(f"\nPut this in .env as GUARD_SPACE_ID={space.id}")
     except GuardError as exc:
         print(f"\nFAILED: {type(exc).__name__}: {exc}", file=sys.stderr)

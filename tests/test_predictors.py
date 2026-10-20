@@ -14,12 +14,12 @@ from .conftest import (
     BASE_URL,
     ORG_ID,
     PREDICTOR_ID,
-    TASK_ID,
+    TARGET_ID,
     page_response,
     predictor_response,
 )
 
-PREDICTORS_URL = f"{BASE_URL}/api/v1/predictors/"
+PREDICTORS_URL = f"{BASE_URL}/api/v1/predictors"
 
 
 @respx.mock
@@ -43,7 +43,7 @@ def test_list_parses_predictors(client):
     assert predictor.status is PredictorStatus.ACTIVE
     assert predictor.token_multiplier == 1
     assert predictor.supported_media == [MediaCategory.IMAGE, MediaCategory.VIDEO]
-    assert predictor.supported_task_ids == [TASK_ID]
+    assert predictor.supported_target_ids == [TARGET_ID]
 
 
 @respx.mock
@@ -58,7 +58,7 @@ def test_list_passes_filters(client):
 
     client.predictors.list(
         organization_id=ORG_ID,
-        supported_task_ids=[TASK_ID],
+        supported_target_ids=[TARGET_ID],
         sort_by="name",
         sort_order="desc",
         skip=5,
@@ -67,7 +67,7 @@ def test_list_passes_filters(client):
 
     params = route.calls.last.request.url.params
     assert params["organization_id"] == str(ORG_ID)
-    assert params.get_list("supported_task_ids") == [str(TASK_ID)]
+    assert params.get_list("supported_target_ids") == [str(TARGET_ID)]
     assert params["sort_by"] == "name"
     assert params["sort_order"] == "desc"
     assert params["skip"] == "5"
@@ -86,7 +86,7 @@ def test_list_omits_unset_filters(client):
     client.predictors.list()
 
     params = route.calls.last.request.url.params
-    for absent in ("user_id", "organization_id", "supported_task_ids", "sort_by"):
+    for absent in ("user_id", "organization_id", "supported_target_ids", "sort_by"):
         assert absent not in params
 
 
@@ -101,7 +101,7 @@ def test_conflicting_owner_filters_raise_before_any_request(client):
     )
 
     with pytest.raises(GuardError, match="both user_id and organization_id"):
-        client.predictors.list(user_id=TASK_ID, organization_id=ORG_ID)
+        client.predictors.list(user_id=TARGET_ID, organization_id=ORG_ID)
 
     assert not route.called
 

@@ -7,14 +7,14 @@ predictor ID, making this script useful for finding one. Only the `GUARD_API_KEY
 required. Everything else resolves through the standard client precedence using
 arguments, the environment, or a `.env` file.
 
-The `--task-id` argument may be repeated. It narrows the results to predictors
-supporting all of the given tasks. Run `scripts/list_tasks.py` to find those IDs.
+The `--target-id` argument may be repeated. It narrows the results to predictors
+supporting all of the given targets. Run `scripts/list_targets.py` to find those IDs.
 
 Example:
     ```bash
     uv run python scripts/list_predictors.py
     uv run python scripts/list_predictors.py --sort-by created_at --sort-order desc
-    uv run python scripts/list_predictors.py --task-id <uuid> --task-id <uuid>
+    uv run python scripts/list_predictors.py --target-id <uuid> --target-id <uuid>
     ```
 """
 
@@ -35,10 +35,10 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--task-id",
+        "--target-id",
         action="append",
         metavar="UUID",
-        help="only predictors supporting this task; repeatable",
+        help="only predictors supporting this target; repeatable",
     )
     parser.add_argument(
         "--sort-by", choices=["name", "created_at"], help="server default: name"
@@ -58,7 +58,7 @@ def main() -> int:
     filters = {
         "user_id": args.user_id,
         "organization_id": args.organization_id,
-        "supported_task_ids": args.task_id,
+        "supported_target_ids": args.target_id,
         "sort_by": args.sort_by,
         "sort_order": args.sort_order,
     }

@@ -30,13 +30,13 @@ from .conftest import (
     PREDICTOR_ID,
     RUNNER_ID,
     SPACE_ID,
-    TASK_ID,
+    TARGET_ID,
     USER_ID,
     space_response,
     spaces_page_response,
 )
 
-SPACES_URL = f"{BASE_URL}/api/v1/spaces/"
+SPACES_URL = f"{BASE_URL}/api/v1/spaces"
 
 
 def params_of(route):
@@ -135,7 +135,7 @@ def test_create_sends_all_supplied_fields(client):
         description="Everything set",
         is_public=True,
         organization_id=ORG_ID,
-        enabled_task_ids=[TASK_ID],
+        enabled_target_ids=[TARGET_ID],
         dedicated_runner_ids=[RUNNER_ID],
     )
 
@@ -145,7 +145,7 @@ def test_create_sends_all_supplied_fields(client):
         "is_public": True,
         "description": "Everything set",
         "organization_id": str(ORG_ID),
-        "enabled_task_ids": [str(TASK_ID)],
+        "enabled_target_ids": [str(TARGET_ID)],
         "dedicated_runner_ids": [str(RUNNER_ID)],
     }
 
@@ -164,7 +164,7 @@ def test_create_omits_unset_optionals(client):
     body = body_of(route)
     for absent in (
         "description",
-        "enabled_task_ids",
+        "enabled_target_ids",
         "dedicated_runner_ids",
         "user_id",
     ):
@@ -214,9 +214,9 @@ def test_create_treats_blank_description_as_unset(client):
 
 
 @respx.mock
-def test_create_dedupes_task_ids_preserving_order(client):
+def test_create_dedupes_target_ids_preserving_order(client):
     """
-    Verify that duplicate task IDs are removed while preserving their original order.
+    Verify that duplicate target IDs are removed while preserving their original order.
     """
     route = respx.post(SPACES_URL).mock(
         return_value=httpx.Response(200, json=space_response())
@@ -227,10 +227,10 @@ def test_create_dedupes_task_ids_preserving_order(client):
         name="Dupes",
         predictor_id=PREDICTOR_ID,
         organization_id=ORG_ID,
-        enabled_task_ids=[TASK_ID, second, TASK_ID],
+        enabled_target_ids=[TARGET_ID, second, TARGET_ID],
     )
 
-    assert body_of(route)["enabled_task_ids"] == [str(TASK_ID), second]
+    assert body_of(route)["enabled_target_ids"] == [str(TARGET_ID), second]
 
 
 @pytest.mark.parametrize(
@@ -273,7 +273,7 @@ def test_create_validates_before_sending(client, kwargs, message):
         (409, GuardConflictError, "A space with this name already exists"),
         (402, GuardPaymentRequiredError, "User needs active subscription"),
         (403, GuardAuthError, "Predictor is not enabled in your active subscription"),
-        (404, GuardNotFoundError, "One or more tasks not found"),
+        (404, GuardNotFoundError, "One or more targets not found"),
         (400, GuardAPIError, "Cannot create space without an owner"),
     ],
 )
@@ -368,7 +368,7 @@ def test_list_parses_page(client):
     assert space.name == "Test Space"
     assert space.status is SpaceStatus.ACTIVE
     assert space.enabled_media == [MediaCategory.IMAGE, MediaCategory.VIDEO]
-    assert space.enabled_task_names == ["Deepfake", "Violence"]
+    assert space.enabled_target_names == ["Deepfake", "Violence"]
 
 
 @respx.mock
@@ -441,12 +441,12 @@ def test_owner_name_prefers_organization(client):
 @respx.mock
 def test_get_parses_space_detail(client):
     """
-    Verify that space detail requests parse into SpaceDetail objects with full task
+    Verify that space detail requests parse into SpaceDetail objects with full target
     models.
     """
     from .conftest import PREDICTOR_ID, space_detail_response
 
-    route = respx.get(f"{SPACES_URL}{SPACE_ID}").mock(
+    route = respx.get(f"{SPACES_URL}/{SPACE_ID}").mock(
         return_value=httpx.Response(200, json=space_detail_response())
     )
 
@@ -457,10 +457,11 @@ def test_get_parses_space_detail(client):
     assert detail.predictor_multiplier == 3
     assert detail.predictor_id == PREDICTOR_ID
     assert detail.max_media_size == 52428800
-    # enabled_tasks are full Task objects here, not the names the list endpoint returns.
-    assert [t.name for t in detail.enabled_tasks] == ["Deepfake"]
-    assert detail.enabled_tasks[0].reactions == {1: "Real photo", 2: "AI generated"}
-    assert detail.task_thresholds[0].blur_threshold == 50
+    # enabled_targets are full Target objects here, not the names the list endpoint
+    # returns.
+    assert [t.name for t in detail.enabled_targets] == ["Deepfake"]
+    assert detail.enabled_targets[0].reactions == {1: "Real photo", 2: "AI generated"}
+    assert detail.target_thresholds[0].blur_threshold == 50
     assert detail.owner_name == "Test Org"
 
 
@@ -469,7 +470,7 @@ async def test_async_get_space_detail(async_client):
     """Verify that the async client can fetch and parse detailed space information."""
     from .conftest import space_detail_response
 
-    respx.get(f"{SPACES_URL}{SPACE_ID}").mock(
+    respx.get(f"{SPACES_URL}/{SPACE_ID}").mock(
         return_value=httpx.Response(200, json=space_detail_response())
     )
 
