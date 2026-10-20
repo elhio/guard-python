@@ -17,22 +17,22 @@ from pydantic import BaseModel, ConfigDict, Field
 from .exceptions import GuardError
 
 __all__ = [
-    "FILTERABLE_RUNNER_STATUSES",
-    "Activity",
-    "ActivityCreateResponse",
-    "ActivityDetail",
-    "ActivityOrder",
-    "ActivityPage",
-    "ActivityResult",
-    "ActivityResultItem",
-    "ActivityStatus",
-    "ActivityStatusResponse",
     "DetectionMatch",
     "DetectionResult",
     "Engine",
+    "FILTERABLE_RUNNER_STATUSES",
     "MediaCategory",
     "MediaType",
     "Page",
+    "Prediction",
+    "PredictionCreateResponse",
+    "PredictionDetail",
+    "PredictionOrder",
+    "PredictionPage",
+    "PredictionResult",
+    "PredictionResultItem",
+    "PredictionStatus",
+    "PredictionStatusResponse",
     "Predictor",
     "PredictorOrder",
     "PredictorPage",
@@ -41,6 +41,7 @@ __all__ = [
     "Reaction",
     "ResultSource",
     "Runner",
+    "RunnerDeployment",
     "RunnerOrder",
     "RunnerPage",
     "RunnerStatus",
@@ -55,13 +56,13 @@ __all__ = [
     "SpacePage",
     "SpaceStatus",
     "SpaceThresholds",
-    "Task",
-    "TaskOrder",
-    "TaskPage",
-    "TaskStatus",
-    "activity_id_of",
+    "Target",
+    "TargetOrder",
+    "TargetPage",
+    "TargetStatus",
     "coerce_enum",
     "ensure_bool",
+    "prediction_id_of",
     "result_items_of",
 ]
 
@@ -77,11 +78,11 @@ class _Base(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class ActivityStatus(str, Enum):
+class PredictionStatus(str, Enum):
     """
-    Lifecycle status of an activity.
+    Lifecycle status of a prediction.
 
-    An activity advances from `PENDING_UPLOAD` through `PROCESSING` to one of three
+    A prediction advances from `PENDING_UPLOAD` through `PROCESSING` to one of three
     terminal states. Only `COMPLETED` carries results.
 
     Attributes:
@@ -101,7 +102,7 @@ class ActivityStatus(str, Enum):
     @property
     def is_terminal(self) -> bool:
         """
-        Whether the activity has stopped moving.
+        Whether the prediction has stopped moving.
 
         Returns:
             `True` for `COMPLETED`, `FAILED`, and `CANCELED`. Polling stops on these
@@ -110,9 +111,9 @@ class ActivityStatus(str, Enum):
         return self in _TERMINAL_STATUSES
 
 
-#: A set containing the terminal activity statuses.
+#: A set containing the terminal prediction statuses.
 _TERMINAL_STATUSES = frozenset(
-    {ActivityStatus.COMPLETED, ActivityStatus.FAILED, ActivityStatus.CANCELED}
+    {PredictionStatus.COMPLETED, PredictionStatus.FAILED, PredictionStatus.CANCELED}
 )
 
 
@@ -148,9 +149,9 @@ class Engine(str, Enum):
     Which detection engine produced a result.
 
     Attributes:
-        CLOUD: The Elhio API. Creates an activity so the result has an `activity_id`.
+        CLOUD: The Elhio API. Creates a prediction so the result has an `prediction_id`.
         LOCAL: The optional on-device engine. Creates nothing server-side so
-            the result has no `activity_id` and cannot be shared or reacted to.
+            the result has no `prediction_id` and cannot be shared or reacted to.
     """
 
     CLOUD = "cloud"
@@ -162,7 +163,7 @@ class SortOrder(str, Enum):
     Direction for a `sort_by` field.
 
     Shared by every list endpoint, though their defaults differ. Spaces sort ascending,
-    while activities and shares sort descending.
+    while predictions and shares sort descending.
 
     Attributes:
         ASC: Ascending.
@@ -175,7 +176,7 @@ class SortOrder(str, Enum):
 
 class SpaceOrder(str, Enum):
     """
-    Fields activities can be sorted by.
+    Fields predictions can be sorted by.
 
     Attributes:
         NAME: Alphabetical by space name.
@@ -186,9 +187,9 @@ class SpaceOrder(str, Enum):
     CREATED_AT = "created_at"
 
 
-class ActivityOrder(str, Enum):
+class PredictionOrder(str, Enum):
     """
-    Fields activities can be sorted by.
+    Fields predictions can be sorted by.
 
     Attributes:
         CREATED_AT: By creation time. This is the only option and the server default.
@@ -210,12 +211,12 @@ class PredictorOrder(str, Enum):
     CREATED_AT = "created_at"
 
 
-class TaskOrder(str, Enum):
+class TargetOrder(str, Enum):
     """
-    Fields tasks can be sorted by.
+    Fields targets can be sorted by.
 
     Attributes:
-        NAME: Alphabetical by task name. This is the server default.
+        NAME: Alphabetical by target name. This is the server default.
         CREATED_AT: By creation time.
     """
 
@@ -245,9 +246,9 @@ class PredictorStatus(str, Enum):
     ACTIVE = "active"
 
 
-class TaskStatus(str, Enum):
+class TargetStatus(str, Enum):
     """
-    Lifecycle status of a task as exposed publicly.
+    Lifecycle status of a target as exposed publicly.
 
     Attributes:
         ACTIVE: Available for use.
@@ -304,9 +305,23 @@ class RunnerOrder(str, Enum):
     CREATED_AT = "created_at"
 
 
+class RunnerDeployment(str, Enum):
+    """
+    Where a runner runs.
+
+    Attributes:
+        MANAGED: Elhio deploys and operates it. This is the server default.
+        EXTERNAL: You run it on your own hardware and enroll it with a token. Only
+            plans that allow external runners can create one.
+    """
+
+    MANAGED = "managed"
+    EXTERNAL = "external"
+
+
 class ShareStatus(str, Enum):
     """
-    Lifecycle status of an activity share.
+    Lifecycle status of a prediction share.
 
     Filter-only. The API accepts these on `statuses` but returns no status field, so a
     fetched `Share` reports expiry through `Share.is_expired` instead.
@@ -322,7 +337,7 @@ class ShareStatus(str, Enum):
 
 class ShareOrder(str, Enum):
     """
-    Fields activity shares can be sorted by.
+    Fields prediction shares can be sorted by.
 
     Attributes:
         CREATED_AT: By creation time. This is the only option and the server default.
@@ -409,7 +424,7 @@ def ensure_bool(value: object, *, field: str) -> bool:
 
 class PresignedUploadData(_Base):
     """
-    S3 presigned POST descriptor returned when an activity is created.
+    S3 presigned POST descriptor returned when a prediction is created.
 
     Attributes:
         url: Where to POST the media. This is not the API host and is not authenticated
@@ -456,22 +471,22 @@ class DetectionMatch(_Base):
     source: Optional[str] = None
 
 
-class ActivityResultItem(_Base):
+class PredictionResultItem(_Base):
     """
-    One task verdict on a piece of media.
+    One target verdict on a piece of media.
 
-    An activity produces one of these per enabled task. The `label` and `description`
+    A prediction produces one of these per enabled target. The `label` and `description`
     arrive already resolved to the client locale.
 
     Attributes:
-        task_id: Which detection produced this. Match it against `Task` ids.
+        target_id: Which detection produced this. Match it against `Target` ids.
         score: 0-100 where higher means more strongly detected. This is not a percentage
             probability.
         label: Human-readable name of the detection in the request locale.
         description: Longer explanation in the request locale when one exists.
         media_key: Storage key for the solution image. This is internal. `media_url` is
             the fetchable form.
-        media_url: Public URL of the solution image, or `None` when this task produced
+        media_url: Public URL of the solution image, or `None` when this target produced
             no image. It is unauthenticated so `show` and `save` need no credentials.
         detected: The engine's threshold verdict, which knows a per-category cutoff no
             caller could infer from `score` alone. This is `None` from the cloud API
@@ -486,7 +501,7 @@ class ActivityResultItem(_Base):
         automatically if the API starts returning them.
     """
 
-    task_id: UUID
+    target_id: UUID
     score: int = Field(ge=0, le=100, description="Score between 0-100")
     label: str
     description: Optional[str] = None
@@ -496,32 +511,32 @@ class ActivityResultItem(_Base):
     matches: Optional[List[DetectionMatch]] = None
 
 
-class ActivityResult(_Base):
+class PredictionResult(_Base):
     """
-    The result payload of a completed activity.
+    The result payload of a completed prediction.
 
     Attributes:
-        results: One entry per task the space had enabled. This is empty until
+        results: One entry per target the space had enabled. This is empty until
             processing finishes.
     """
 
-    results: List[ActivityResultItem] = Field(default_factory=list)
+    results: List[PredictionResultItem] = Field(default_factory=list)
 
 
-class _ActivityOwner(_Base):
+class _PredictionOwner(_Base):
     """
-    The mutually-exclusive owner identifiers carried by most activity models.
+    The mutually-exclusive owner identifiers carried by most prediction models.
 
-    Exactly one is set to identify who the activity belongs to. This determines who may
-    react to or share it.
+    Exactly one is set to identify who the prediction belongs to. This determines who
+    may react to or share it.
 
     Attributes:
         user_id: Owning user when a user token created it.
         account_id: Owning service account when a service account token created it.
         guest_id: Owning guest for anonymous flows in a public space. This is
             read-only here. This client always authenticates and the API assigns
-            a guest owner only to activities created without an identity, such
-            as by the browser extension. It is reported so those activities still
+            a guest owner only to predictions created without an identity, such
+            as by the browser extension. It is reported so those predictions still
             round-trip, but is never set by us.
     """
 
@@ -530,39 +545,43 @@ class _ActivityOwner(_Base):
     guest_id: Optional[UUID] = None
 
 
-class Activity(_ActivityOwner):
+class Prediction(_PredictionOwner):
     """
     An analysis run as it appears in listings.
 
-    This is the summary shape. `ActivityDetail` adds the results and processing
+    This is the summary shape. `PredictionDetail` adds the results and processing
     metadata.
 
     Attributes:
         id: Server-assigned identifier.
         status: Where the run has got to.
         created_at: When it was created.
-        space_id: The space it belongs to.
+        space_id: The space it belongs to, or `None` for a lab's prediction.
+        lab_id: The lab it belongs to, or `None` for a space's prediction.
         space_name: That space display name.
+        lab_name: That lab display name.
         user_name: Owning user display name when a user owns it.
         account_name: Owning service account name when one owns it.
         media_type: MIME type of the submitted media.
     """
 
     id: UUID
-    status: ActivityStatus
+    status: PredictionStatus
     created_at: datetime
-    space_id: UUID
+    space_id: Optional[UUID] = None
+    lab_id: Optional[UUID] = None
     space_name: Optional[str] = None
+    lab_name: Optional[str] = None
     user_name: Optional[str] = None
     account_name: Optional[str] = None
     media_type: MediaType
 
 
-class ActivityCreateResponse(Activity):
+class PredictionCreateResponse(Prediction):
     """
-    An activity plus the one-time target for uploading its media.
+    A prediction plus the one-time target for uploading its media.
 
-    This is returned only from creation. Fetching the activity again will not give you
+    This is returned only from creation. Fetching the prediction again will not give you
     `upload_data` a second time, so upload before discarding it.
 
     Attributes:
@@ -572,34 +591,35 @@ class ActivityCreateResponse(Activity):
     upload_data: PresignedUploadData
 
 
-class ActivityStatusResponse(_ActivityOwner):
+class PredictionStatusResponse(_PredictionOwner):
     """
-    Just enough of an activity to poll it.
+    Just enough of a prediction to poll it.
 
     This is deliberately small. Polling fetches this rather than the full detail so
     waiting does not repeatedly transfer its results.
 
     Attributes:
-        id: The activity being polled.
+        id: The prediction being polled.
         status: Where the run has got to.
     """
 
     id: UUID
-    status: ActivityStatus
+    status: PredictionStatus
 
 
-class ActivityDetail(_ActivityOwner):
+class PredictionDetail(_PredictionOwner):
     """
-    An activity with everything the API knows about it.
+    A prediction with everything the API knows about it.
 
-    This is what `activities.get()` returns and the shape carrying the results.
+    This is what `predictions.get()` returns and the shape carrying the results.
 
     Attributes:
         id: Server-assigned identifier.
         status: Where the run has got to.
         created_at: When it was created.
         updated_at: When it last changed status.
-        space_id: The space it belongs to.
+        space_id: The space it belongs to, or `None` for a lab's prediction.
+        lab_id: The lab it belongs to, or `None` for a space's prediction.
         predictor_id: The model that processed it.
         runner_id: The runner that served it when a dedicated one did.
         media_type: MIME type of the submitted media.
@@ -609,6 +629,7 @@ class ActivityDetail(_ActivityOwner):
             processing ends.
         result_payload: The scored results, or `None` while still processing.
         space_name: The space display name.
+        lab_name: The lab display name.
         predictor_name: The predictor display name.
         runner_name: The runner name when a dedicated one served it.
         user_name: Owning user display name.
@@ -616,17 +637,19 @@ class ActivityDetail(_ActivityOwner):
     """
 
     id: UUID
-    status: ActivityStatus
+    status: PredictionStatus
     created_at: datetime
     updated_at: datetime
     space_id: Optional[UUID] = None
+    lab_id: Optional[UUID] = None
     predictor_id: Optional[UUID] = None
     runner_id: Optional[UUID] = None
     media_type: MediaType
     media_size: int
     payed_tokens: Optional[int] = None
-    result_payload: Optional[ActivityResult] = None
+    result_payload: Optional[PredictionResult] = None
     space_name: Optional[str] = None
+    lab_name: Optional[str] = None
     predictor_name: Optional[str] = None
     runner_name: Optional[str] = None
     user_name: Optional[str] = None
@@ -635,9 +658,9 @@ class ActivityDetail(_ActivityOwner):
 
 class Space(_Base):
     """
-    A container that activities are created in as it appears in listings.
+    A container that predictions are created in as it appears in listings.
 
-    A space fixes which predictor runs, which tasks are enabled, and who owns the
+    A space fixes which predictor runs, which targets are enabled, and who owns the
     results. `SpaceDetail` is the fuller shape from `spaces.get()`.
 
     Attributes:
@@ -657,8 +680,8 @@ class Space(_Base):
         predictor_id: The model this space runs.
         predictor_name: That predictor display name.
         enabled_media: Which media categories may be submitted.
-        enabled_task_names: Names of the enabled detections. The detail endpoint
-            returns full task objects under `enabled_tasks` instead.
+        enabled_target_names: Names of the enabled detections. The detail endpoint
+            returns full target objects under `enabled_targets` instead.
     """
 
     id: UUID
@@ -677,7 +700,7 @@ class Space(_Base):
     predictor_id: UUID
     predictor_name: Optional[str] = None
     enabled_media: List[MediaCategory] = Field(default_factory=list)
-    enabled_task_names: List[str] = Field(default_factory=list)
+    enabled_target_names: List[str] = Field(default_factory=list)
 
     @property
     def owner_name(self) -> Optional[str]:
@@ -703,11 +726,11 @@ class Predictor(_Base):
         name: Display name.
         status: Lifecycle status. Only `ACTIVE` is ever returned.
         description: What the model does.
-        token_multiplier: Cost multiplier applied to every activity in a space using it.
+        token_multiplier: Cost multiplier for every prediction in a space using it.
         slug: URL-safe form of the name.
         url_id: Short public identifier used in web links.
         supported_media: Which media categories it can process.
-        supported_task_ids: Which detections it can run.
+        supported_target_ids: Which detections it can run.
     """
 
     id: UUID
@@ -718,15 +741,15 @@ class Predictor(_Base):
     slug: str
     url_id: str
     supported_media: List[MediaCategory] = Field(default_factory=list)
-    supported_task_ids: List[UUID] = Field(default_factory=list)
+    supported_target_ids: List[UUID] = Field(default_factory=list)
 
 
-class Task(_Base):
+class Target(_Base):
     """
     One detection a space can enable, such as deepfake or violence.
 
     Attributes:
-        id: Server-assigned identifier used for `spaces.create(enabled_task_ids=...)`.
+        id: Server-assigned identifier used for `spaces.create(enabled_target_ids=...)`.
         status: Lifecycle status. Only `ACTIVE` is ever returned.
         name: Display name in the request locale.
         description: What the detection looks for in the request locale.
@@ -735,7 +758,7 @@ class Task(_Base):
     """
 
     id: UUID
-    status: TaskStatus
+    status: TargetStatus
     name: str
     description: Optional[str] = None
     reactions: Dict[int, str] = Field(
@@ -749,45 +772,45 @@ class Task(_Base):
 
 class Reaction(_Base):
     """
-    Feedback on whether one task result was correct.
+    Feedback on whether one target result was correct.
 
-    The API accepts one reaction per activity and task, and offers no way for a
+    The API accepts one reaction per prediction and target, and offers no way for a
     non-admin to read or remove one afterwards. This is only ever seen as the return
     value of creating it.
 
     Attributes:
         id: Server-assigned identifier.
         created_at: When the feedback was recorded.
-        activity_id: The activity being commented on.
-        task_id: Which task result the feedback concerns.
+        prediction_id: The prediction being commented on.
+        target_id: Which target result the feedback concerns.
         is_positive: `True` if the detection was right.
-        key_value: The expected result as a key of that task `reactions` map.
+        key_value: The expected result as a key of that target `reactions` map.
         description: Free-text comment up to 255 characters.
     """
 
     id: UUID
     created_at: datetime
-    activity_id: UUID
-    task_id: UUID
+    prediction_id: UUID
+    target_id: UUID
     is_positive: bool
     key_value: Optional[int] = Field(
         default=None,
-        description="The expected result, keyed into the task's `reactions` map",
+        description="The expected result, keyed into the target's `reactions` map",
     )
     description: Optional[str] = None
 
 
 class SpaceThresholds(_Base):
     """
-    Per-task score cut-offs configured on a space.
+    Per-target score cut-offs configured on a space.
 
     Attributes:
-        task_id: Which detection these thresholds apply to.
+        target_id: Which detection these thresholds apply to.
         blur_threshold: Score at or above which media is blurred, 0-100.
         hide_threshold: Score at or above which media is hidden entirely, 0-100.
     """
 
-    task_id: UUID
+    target_id: UUID
     blur_threshold: Optional[int] = Field(default=None, ge=0, le=100)
     hide_threshold: Optional[int] = Field(default=None, ge=0, le=100)
 
@@ -797,8 +820,8 @@ class SpaceDetail(_Base):
     A space with its full configuration.
 
     This is deliberately not a subclass of `Space`. The detail endpoint returns
-    `enabled_tasks` as full task objects, whereas the list endpoint returns
-    `enabled_task_names` as plain strings. The two shapes genuinely diverge.
+    `enabled_targets` as full target objects, whereas the list endpoint returns
+    `enabled_target_names` as plain strings. The two shapes genuinely diverge.
 
     Attributes:
         id: Server-assigned identifier.
@@ -820,8 +843,8 @@ class SpaceDetail(_Base):
             `token_multiplier` and is what `GuardClient.estimate_tokens` reads.
         max_media_size: Largest accepted upload in bytes when the space caps it.
         enabled_media: Which media categories may be submitted.
-        enabled_tasks: The enabled detections as full objects rather than names.
-        task_thresholds: Per-task blur and hide cut-offs.
+        enabled_targets: The enabled detections as full objects rather than names.
+        target_thresholds: Per-target blur and hide cut-offs.
     """
 
     id: UUID
@@ -845,8 +868,8 @@ class SpaceDetail(_Base):
     )
     max_media_size: Optional[int] = Field(default=None, description="Bytes")
     enabled_media: List[MediaCategory] = Field(default_factory=list)
-    enabled_tasks: List[Task] = Field(default_factory=list)
-    task_thresholds: List[SpaceThresholds] = Field(default_factory=list)
+    enabled_targets: List[Target] = Field(default_factory=list)
+    target_thresholds: List[SpaceThresholds] = Field(default_factory=list)
 
     @property
     def owner_name(self) -> Optional[str]:
@@ -862,18 +885,18 @@ class SpaceDetail(_Base):
 
 class Share(_Base):
     """
-    A public link to one task result for an activity.
+    A public link to one target result for a prediction.
 
-    The API allows one share per activity and offers no way to revoke it. A link lives
+    The API allows one share per prediction and offers no way to revoke it. A link lives
     until `expired_at` passes.
 
     Attributes:
         id: Server-assigned identifier.
         created_at: When the link was created.
         expired_at: When it stops working. See `is_expired`.
-        activity_id: The activity being shared.
-        task_id: Which task result the link shows.
-        task_name: That task display name in the request locale.
+        prediction_id: The prediction being shared.
+        target_id: Which target result the link shows.
+        target_name: That target display name in the request locale.
         space_name: The owning space display name.
         expires_in: Requested lifetime in days, 1-7.
         share_url: The public link to hand out. This is the point of the object.
@@ -884,14 +907,14 @@ class Share(_Base):
     id: UUID
     created_at: datetime
     expired_at: datetime
-    activity_id: UUID
-    task_id: UUID
-    task_name: Optional[str] = None
+    prediction_id: UUID
+    target_id: UUID
+    target_name: Optional[str] = None
     space_name: Optional[str] = None
     expires_in: int = Field(default=7, description="Lifetime in days, 1-7")
     share_url: str
     media_url: Optional[str] = None
-    result: Optional[ActivityResultItem] = None
+    result: Optional[PredictionResultItem] = None
 
     @property
     def is_expired(self) -> bool:
@@ -920,6 +943,7 @@ class Runner(_Base):
         id: Server-assigned identifier.
         status: Where the deployment has got to. May be `TERMINATED`, which cannot be
             used as a filter.
+        deployment: Whether Elhio runs it or you do.
         created_at: When the runner was created.
         terminated_at: When it was torn down, or `None` while it lives.
         name: Display name.
@@ -933,6 +957,7 @@ class Runner(_Base):
 
     id: UUID
     status: RunnerStatus
+    deployment: RunnerDeployment = RunnerDeployment.MANAGED
     created_at: datetime
     terminated_at: Optional[datetime] = None
     name: str
@@ -1021,12 +1046,12 @@ class Page(BaseModel, Generic[ItemT]):
 
 #: One page of spaces as returned by `Spaces.list`.
 SpacePage = Page[Space]
-#: One page of activities as returned by `Activities.list`.
-ActivityPage = Page[Activity]
+#: One page of predictions as returned by `Predictions.list`.
+PredictionPage = Page[Prediction]
 #: One page of predictors as returned by `Predictors.list`.
 PredictorPage = Page[Predictor]
-#: One page of tasks as returned by `Tasks.list`.
-TaskPage = Page[Task]
+#: One page of targets as returned by `Targets.list`.
+TargetPage = Page[Target]
 #: One page of runners as returned by `Runners.list`.
 RunnerPage = Page[Runner]
 #: One page of shares as returned by `Shares.list`.
@@ -1045,74 +1070,74 @@ class DetectionResult(_Base):
     """
 
     engine: Engine
-    results: List[ActivityResultItem] = Field(default_factory=list)
-    activity_id: Optional[UUID] = Field(
-        default=None, description="None for local runs, which create no activity"
+    results: List[PredictionResultItem] = Field(default_factory=list)
+    prediction_id: Optional[UUID] = Field(
+        default=None, description="None for local runs, which create no prediction"
     )
 
     @property
     def max_score(self) -> int:
         """
-        The strongest detection across every task.
+        The strongest detection across every target.
 
-        This is useful as a single number to threshold on when the specific task matters
-        less than whether anything fired.
+        This is useful as a single number to threshold on when the specific target
+        matters less than whether anything fired.
 
         Returns:
             The highest score in `results` or 0 when there are none.
         """
         return max((item.score for item in self.results), default=0)
 
-    def score_for(self, task_id: UUID) -> Optional[int]:
+    def score_for(self, target_id: UUID) -> Optional[int]:
         """
-        Look up one task score.
+        Look up one target score.
 
         Args:
-            task_id: Which detection to read.
+            target_id: Which detection to read.
 
         Returns:
-            That task score, or `None` when the task is absent from the results. This is
-            different from a score of 0.
+            That target score, or `None` when the target is absent from the results.
+            This is different from a score of 0.
         """
         return next(
-            (item.score for item in self.results if item.task_id == task_id), None
+            (item.score for item in self.results if item.target_id == target_id), None
         )
 
 
-#: A type alias for anything carrying the scored results of an activity, whichever call
-#: produced it. `GuardClient.analyze` returns a `DetectionResult` and `activities.get()`
-#: returns an `ActivityDetail`. They spell the same two things differently, which the
-#: helper functions below reconcile.
-ResultSource = Union[DetectionResult, ActivityDetail]
+#: A type alias for anything carrying the scored results of a prediction, whichever call
+#: produced it. `GuardClient.analyze` returns a `DetectionResult` and
+#: `predictions.get()` returns a `PredictionDetail`. They spell the same two things
+#: differently, which the helper functions below reconcile.
+ResultSource = Union[DetectionResult, PredictionDetail]
 
 
-def activity_id_of(source: ResultSource) -> Optional[UUID]:
+def prediction_id_of(source: ResultSource) -> Optional[UUID]:
     """
-    Extract the activity id behind a result.
+    Extract the prediction id behind a result.
 
     Args:
         source: The result source to examine.
 
     Returns:
-        The activity id behind the result, or `None` when there is no server-side
-        activity. `None` means it is a local-engine `DetectionResult`. Nothing was
+        The prediction id behind the result, or `None` when there is no server-side
+        prediction. `None` means it is a local-engine `DetectionResult`. Nothing was
         created on the server, so there is nothing to react to or share.
     """
     if isinstance(source, DetectionResult):
-        return source.activity_id
+        return source.prediction_id
     return source.id
 
 
-def result_items_of(source: ResultSource) -> List[ActivityResultItem]:
+def result_items_of(source: ResultSource) -> List[PredictionResultItem]:
     """
     Pull the scored items out of either result shape.
 
     Args:
-        source: A `DetectionResult` from `analyze()` or an `ActivityDetail` from
-            `activities.get()`.
+        source: A `DetectionResult` from `analyze()` or a `PredictionDetail` from
+            `predictions.get()`.
 
     Returns:
-        The result items. This is empty when the activity is still processing because
+        The result items. This is empty when the prediction is still processing because
         `result_payload` is only populated once it completes.
     """
     if isinstance(source, DetectionResult):

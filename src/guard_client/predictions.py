@@ -1,8 +1,8 @@
 """
-Low-level bindings for the activity endpoints.
+Low-level bindings for the prediction endpoints.
 
-`Activities` and `AsyncActivities` provide synchronous and asynchronous interfaces for
-the API. Both share `_ActivitiesBase` for request building to guarantee identical
+`Predictions` and `AsyncPredictions` provide synchronous and asynchronous interfaces for
+the API. Both share `_PredictionsBase` for request building to guarantee identical
 behavior.
 """
 
@@ -13,7 +13,7 @@ import time
 from typing import Any, AsyncIterator, Dict, Iterator, Optional, Sequence, Union
 from uuid import UUID
 
-from .exceptions import ActivityFailedError, GuardError, GuardTimeoutError
+from .exceptions import GuardError, GuardTimeoutError, PredictionFailedError
 from .filters import (
     MAX_LIMIT,
     DateLike,
@@ -27,33 +27,33 @@ from .filters import (
 )
 from .media import MediaSource, resolve_media
 from .models import (
-    Activity,
-    ActivityCreateResponse,
-    ActivityDetail,
-    ActivityOrder,
-    ActivityPage,
-    ActivityStatus,
-    ActivityStatusResponse,
     MediaType,
+    Prediction,
+    PredictionCreateResponse,
+    PredictionDetail,
+    PredictionOrder,
+    PredictionPage,
+    PredictionStatus,
+    PredictionStatusResponse,
     PresignedUploadData,
     SortOrder,
 )
 from .transport import AsyncTransport, SyncTransport
 
-__all__ = ["Activities", "AsyncActivities", "IdLike"]
+__all__ = ["Predictions", "AsyncPredictions", "IdLike"]
 
-#: The base URL path for activity endpoints.
-_BASE = "/api/v1/activities/"
+#: The base URL path for prediction endpoints.
+_BASE = "/api/v1/predictions"
 
-#: Default seconds to wait between status checks when polling an activity.
+#: Default seconds to wait between status checks when polling a prediction.
 DEFAULT_POLL_INTERVAL = 2
 
-#: Default maximum seconds to wait for an activity to complete before raising a timeout
+#: Default maximum seconds to wait for a prediction to complete before raising a timeout
 #: error.
 DEFAULT_POLL_TIMEOUT = 90.0
 
 
-class _ActivitiesBase:
+class _PredictionsBase:
     """
     Handles request and response shaping without performing network I/O.
 
@@ -102,15 +102,20 @@ class _ActivitiesBase:
         space_id: Optional[IdLike],
         user_id: Optional[IdLike],
         account_id: Optional[IdLike],
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
-        Build the body for creating an activity.
+        Build the body for creating a prediction.
 
         Returns:
-            The request body, omitting every owner id that was not supplied.
+            The request body, omitting every owner id and dimension that was not
+            supplied.
 
         Raises:
-            GuardError: No space id is available from the call or the client default.
+            GuardError: No space id is available from the call or the client default,
+                or a dimension is invalid.
         """
         resolved_type = (
             media_type.value if isinstance(media_type, MediaType) else media_type
@@ -126,6 +131,7 @@ class _ActivitiesBase:
         ):
             if value is not None:
                 payload[key] = str(value)
+        payload.update(_dimensions(width, height, duration_seconds))
         return payload
 
     @staticmethod
@@ -136,8 +142,8 @@ class _ActivitiesBase:
         space_id: Optional[IdLike],
         start_date: Optional[DateLike],
         end_date: Optional[DateLike],
-        statuses: Optional[Sequence[Union[ActivityStatus, str]]],
-        sort_by: Optional[Union[ActivityOrder, str]],
+        statuses: Optional[Sequence[Union[PredictionStatus, str]]],
+        sort_by: Optional[Union[PredictionOrder, str]],
         sort_order: Optional[Union[SortOrder, str]],
         skip: int,
         limit: int,
@@ -163,26 +169,67 @@ class _ActivitiesBase:
         )
         add_datetime(params, "start_date", start_date)
         add_datetime(params, "end_date", end_date)
-        add_statuses(params, statuses, ActivityStatus)
-        add_sort(params, sort_by, sort_order, ActivityOrder)
+        add_statuses(params, statuses, PredictionStatus)
+        add_sort(params, sort_by, sort_order, PredictionOrder)
         return params
 
     @staticmethod
     def _check_terminal(
-        status: ActivityStatusResponse, activity_id: IdLike
-    ) -> Optional[ActivityStatusResponse]:
+        status: PredictionStatusResponse, prediction_id: IdLike
+    ) -> Optional[PredictionStatusResponse]:
         """
-        Return the activity status if valid, raising on failure.
+        Return the prediction status if valid, raising on failure.
         """
-        if status.status is ActivityStatus.COMPLETED:
+        if status.status is PredictionStatus.COMPLETED:
             return status
-        if status.status in (ActivityStatus.FAILED, ActivityStatus.CANCELED):
-            raise ActivityFailedError(
-                f"Activity {activity_id} {status.status.value}",
+        if status.status in (PredictionStatus.FAILED, PredictionStatus.CANCELED):
+            raise PredictionFailedError(
+                f"Prediction {prediction_id} {status.status.value}",
                 status=status.status.value,
-                activity_id=_as_uuid(activity_id),
+                prediction_id=_as_uuid(prediction_id),
             )
         return None
+
+
+def _dimensions(
+    width: Optional[int], height: Optional[int], duration_seconds: Optional[float]
+) -> Dict[str, Any]:
+    """
+    Validate the declared media dimensions.
+
+    The API reserves tokens from these and rejects media whose long side has no price
+    before anything is uploaded. Without them it reserves the smallest possible
+    prediction and only learns the real cost from the runner.
+
+    Args:
+        width: Width in pixels, or `None` when unknown.
+        height: Height in pixels, or `None` when unknown.
+        duration_seconds: Video length in seconds, or `None` for a still image or when
+            unknown.
+
+    Returns:
+        The body fields for the values that were supplied.
+
+    Raises:
+        GuardError: Only one of `width` and `height` was given, a side is not a
+            positive integer, or the duration is negative.
+    """
+    if (width is None) != (height is None):
+        raise GuardError("width and height must be given together")
+    fields: Dict[str, Any] = {}
+    if width is not None and height is not None:
+        for name, side in (("width", width), ("height", height)):
+            if isinstance(side, bool) or not isinstance(side, int) or side <= 0:
+                raise GuardError(f"Invalid {name}={side!r}. Expected a positive int")
+        fields["width"] = width
+        fields["height"] = height
+    if duration_seconds is not None:
+        if isinstance(duration_seconds, bool) or duration_seconds < 0:
+            raise GuardError(
+                f"Invalid duration_seconds={duration_seconds!r}. Expected 0 or greater"
+            )
+        fields["duration_seconds"] = float(duration_seconds)
+    return fields
 
 
 def _as_uuid(value: IdLike) -> Optional[UUID]:
@@ -204,9 +251,9 @@ def _as_uuid(value: IdLike) -> Optional[UUID]:
         return None
 
 
-class Activities(_ActivitiesBase):
+class Predictions(_PredictionsBase):
     """
-    Synchronous activity endpoints.
+    Synchronous prediction endpoints.
 
     This is reached through the client rather than constructed directly, and it shares
     the client's connection pool.
@@ -234,27 +281,36 @@ class Activities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         user_id: Optional[IdLike] = None,
         account_id: Optional[IdLike] = None,
-    ) -> ActivityCreateResponse:
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> PredictionCreateResponse:
         """
-        Create an activity and get back its presigned upload target.
+        Create a prediction and get back its presigned upload target.
 
         Args:
             media_type: MIME type of the media you will upload.
             media_size: Its size in bytes.
             space_id: Overrides the client default space id.
-            user_id: Owning user, for a user-owned activity.
+            user_id: Owning user, for a user-owned prediction.
             account_id: Owning service account.
+            width: Media width in pixels. Give it with `height` so the API reserves
+                the real cost rather than the smallest possible one.
+            height: Media height in pixels.
+            duration_seconds: Video length in seconds.
 
         Returns:
-            The created activity, including the one-time `upload_data`.
+            The created prediction, including the one-time `upload_data`.
 
         Raises:
-            GuardError: No space id is available.
-            GuardAPIError: The API rejected the request.
+            GuardError: No space id is available, or a dimension is invalid.
+            GuardAPIError: The API rejected the request, for example with a 413 when
+                the media is larger than the space allows or its long side has no
+                price.
 
         Note:
             This request is safe to replay and is the only POST the client retries.
-            A duplicate create leaves an unused activity rather than performing an
+            A duplicate create leaves an unused prediction rather than performing an
             action twice.
         """
         payload = self._create_payload(
@@ -263,9 +319,12 @@ class Activities(_ActivitiesBase):
             space_id=space_id,
             user_id=user_id,
             account_id=account_id,
+            width=width,
+            height=height,
+            duration_seconds=duration_seconds,
         )
         data = self._transport.request("POST", _BASE, json=payload, retry=True)
-        return ActivityCreateResponse.model_validate(data)
+        return PredictionCreateResponse.model_validate(data)
 
     def upload(
         self,
@@ -291,57 +350,57 @@ class Activities(_ActivitiesBase):
         data, _, name = resolve_media(source, media_type=media_type, filename=filename)
         self._transport.upload(upload_data.url, upload_data.fields, name, data)
 
-    def confirm(self, activity_id: IdLike) -> Activity:
+    def confirm(self, prediction_id: IdLike) -> Prediction:
         """
-        Confirm the upload, which moves the activity into processing.
+        Confirm the upload, which moves the prediction into processing.
 
         Args:
-            activity_id: The activity whose media has been uploaded.
+            prediction_id: The prediction whose media has been uploaded.
 
         Returns:
-            The activity, which is now processing.
+            The prediction, which is now processing.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = self._transport.request("POST", f"{_BASE}{activity_id}/confirm")
-        return Activity.model_validate(data)
+        data = self._transport.request("POST", f"{_BASE}/{prediction_id}/confirm")
+        return Prediction.model_validate(data)
 
-    def get_status(self, activity_id: IdLike) -> ActivityStatusResponse:
+    def get_status(self, prediction_id: IdLike) -> PredictionStatusResponse:
         """
-        Read just enough of an activity to know its current state.
+        Read just enough of a prediction to know its current state.
 
-        This response is deliberately smaller than `get` so polling an activity does
+        This response is deliberately smaller than `get` so polling a prediction does
         not repeatedly transfer its results.
 
         Args:
-            activity_id: The activity to check.
+            prediction_id: The prediction to check.
 
         Returns:
-            The id and current status of the activity.
+            The id and current status of the prediction.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = self._transport.request("GET", f"{_BASE}{activity_id}/status")
-        return ActivityStatusResponse.model_validate(data)
+        data = self._transport.request("GET", f"{_BASE}/{prediction_id}/status")
+        return PredictionStatusResponse.model_validate(data)
 
-    def get(self, activity_id: IdLike) -> ActivityDetail:
+    def get(self, prediction_id: IdLike) -> PredictionDetail:
         """
-        Read an activity in full, including its results.
+        Read a prediction in full, including its results.
 
         Args:
-            activity_id: The activity to fetch.
+            prediction_id: The prediction to fetch.
 
         Returns:
-            The activity. `result_payload` is `None` until processing finishes, and
+            The prediction. `result_payload` is `None` until processing finishes, and
             `payed_tokens` carries the actual cost.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = self._transport.request("GET", f"{_BASE}{activity_id}")
-        return ActivityDetail.model_validate(data)
+        data = self._transport.request("GET", f"{_BASE}/{prediction_id}")
+        return PredictionDetail.model_validate(data)
 
     def list(
         self,
@@ -351,33 +410,33 @@ class Activities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         start_date: Optional[DateLike] = None,
         end_date: Optional[DateLike] = None,
-        statuses: Optional[Sequence[Union[ActivityStatus, str]]] = None,
-        sort_by: Optional[Union[ActivityOrder, str]] = None,
+        statuses: Optional[Sequence[Union[PredictionStatus, str]]] = None,
+        sort_by: Optional[Union[PredictionOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         skip: int = 0,
         limit: int = MAX_LIMIT,
-    ) -> ActivityPage:
+    ) -> PredictionPage:
         """
-        List activities matching the given filters.
+        List predictions matching the given filters.
 
         Args:
-            user_id: Only this user's activities. This may be combined with
+            user_id: Only this user's predictions. This may be combined with
                 `organization_id`, and the API will apply both.
-            organization_id: Only this organization's activities.
-            space_id: Only activities in this space.
+            organization_id: Only this organization's predictions.
+            space_id: Only predictions in this space.
             start_date: A `datetime`, `date`, or an ISO-8601 string. The API keeps only
                 one year of history. Anything older is rejected locally before the
                 request is sent. Omitting it defaults to exactly one year ago. A naive
                 datetime is interpreted as UTC to match the server.
             end_date: Accepts the same types as start_date. Defaults to now.
-            statuses: Keep only activities with these statuses.
+            statuses: Keep only predictions with these statuses.
             sort_by: Valid options include `"created_at"`. Server default: `created_at`.
-            sort_order: `"asc"` or `"desc"`. Server default for activities: `desc`.
+            sort_order: `"asc"` or `"desc"`. Server default for predictions: `desc`.
             skip: Offset, 0 or greater.
             limit: Page size, 1-100.
 
         Returns:
-            An `ActivityPage`. You can iterate it like a list, or read `.count` for the
+            A `PredictionPage`. You can iterate it like a list, or read `.count` for the
             total matching the filter across all pages.
         """
         params = self._list_params(
@@ -393,7 +452,7 @@ class Activities(_ActivitiesBase):
             limit=limit,
         )
         data = self._transport.request("GET", _BASE, params=params)
-        return ActivityPage.model_validate(data)
+        return PredictionPage.model_validate(data)
 
     def iter_all(
         self,
@@ -403,31 +462,31 @@ class Activities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         start_date: Optional[DateLike] = None,
         end_date: Optional[DateLike] = None,
-        statuses: Optional[Sequence[Union[ActivityStatus, str]]] = None,
-        sort_by: Optional[Union[ActivityOrder, str]] = None,
+        statuses: Optional[Sequence[Union[PredictionStatus, str]]] = None,
+        sort_by: Optional[Union[PredictionOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         page_size: int = MAX_LIMIT,
-    ) -> Iterator[Activity]:
+    ) -> Iterator[Prediction]:
         """
-        Yield every matching activity by fetching pages as needed.
+        Yield every matching prediction by fetching pages as needed.
 
         Args:
-            user_id: Only this user's activities. This may be combined with
+            user_id: Only this user's predictions. This may be combined with
                 `organization_id`, and the API will apply both.
-            organization_id: Only this organization's activities.
-            space_id: Only activities in this space.
+            organization_id: Only this organization's predictions.
+            space_id: Only predictions in this space.
             start_date: A `datetime`, `date`, or an ISO-8601 string. The API keeps only
                 one year of history. Anything older is rejected locally before the
                 request is sent. Omitting it defaults to exactly one year ago. A naive
                 datetime is interpreted as UTC to match the server.
             end_date: Accepts the same types as start_date. Defaults to now.
-            statuses: Keep only activities with these statuses.
+            statuses: Keep only predictions with these statuses.
             sort_by: Valid options include `"created_at"`. Server default: `created_at`.
-            sort_order: `"asc"` or `"desc"`. Server default for activities: `desc`.
+            sort_order: `"asc"` or `"desc"`. Server default for predictions: `desc`.
             page_size: Page size, 1-100.
 
         Yields:
-            Each matching activity, starting with the oldest page first.
+            Each matching prediction, starting with the oldest page first.
 
         Note:
             Pages are fetched lazily. Breaking out of the loop early stops the requests
@@ -457,50 +516,50 @@ class Activities(_ActivitiesBase):
 
     def wait_until_done(
         self,
-        activity_id: IdLike,
+        prediction_id: IdLike,
         *,
         interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_POLL_TIMEOUT,
-    ) -> ActivityStatusResponse:
+    ) -> PredictionStatusResponse:
         """
-        Poll until the activity completes.
+        Poll until the prediction completes.
 
         Args:
-            activity_id: The activity to check.
+            prediction_id: The prediction to check.
             interval: Seconds to wait between polling requests.
             timeout: Maximum seconds to wait before raising an error.
 
         Returns:
-            The terminal status, which is always `completed`. An activity that ended as
+            The terminal status, which is always `completed`. A prediction that ended as
             `failed` or `canceled` raises rather than returning, so a value coming back
             from here needs no further checking.
 
         Raises:
-            ActivityFailedError: The activity ended as `failed` or `canceled`.
+            PredictionFailedError: The prediction ended as `failed` or `canceled`.
             GuardTimeoutError: The specified timeout seconds elapsed without reaching a
                 terminal status.
         """
         deadline = time.monotonic() + timeout
         while True:
-            status = self.get_status(activity_id)
-            done = self._check_terminal(status, activity_id)
+            status = self.get_status(prediction_id)
+            done = self._check_terminal(status, prediction_id)
             if done is not None:
                 return done
             if time.monotonic() + interval >= deadline:
                 raise GuardTimeoutError(
-                    f"Activity {activity_id} did not complete within {timeout}s "
+                    f"Prediction {prediction_id} did not complete within {timeout}s "
                     f"(last status: {status.status.value})",
-                    activity_id=_as_uuid(activity_id),
+                    prediction_id=_as_uuid(prediction_id),
                 )
             time.sleep(interval)
 
 
-class AsyncActivities(_ActivitiesBase):
+class AsyncPredictions(_PredictionsBase):
     """
-    Asynchronous activity endpoints.
+    Asynchronous prediction endpoints.
 
     This is reached through the client rather than constructed directly, and it shares
-    the client's connection pool. It mirrors `Activities` method for method. Review the
+    the client's connection pool. It mirrors `Predictions` method for method. Review the
     synchronous methods for argument details.
     """
 
@@ -526,28 +585,37 @@ class AsyncActivities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         user_id: Optional[IdLike] = None,
         account_id: Optional[IdLike] = None,
-    ) -> ActivityCreateResponse:
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> PredictionCreateResponse:
         """
-        Create an activity and get back its presigned upload target.
+        Create a prediction and get back its presigned upload target.
 
         Args:
             media_type: MIME type of the media you will upload.
             media_size: Its size in bytes.
             space_id: Overrides the client default space id.
-            user_id: Owning user, for a user-owned activity.
+            user_id: Owning user, for a user-owned prediction.
             account_id: Owning service account.
+            width: Media width in pixels. Give it with `height` so the API reserves
+                the real cost rather than the smallest possible one.
+            height: Media height in pixels.
+            duration_seconds: Video length in seconds.
 
         Returns:
-            The created activity, including the one-time `upload_data`.
+            The created prediction, including the one-time `upload_data`.
 
         Raises:
-            GuardError: No space id is available.
-            GuardAPIError: The API rejected the request.
+            GuardError: No space id is available, or a dimension is invalid.
+            GuardAPIError: The API rejected the request, for example with a 413 when
+                the media is larger than the space allows or its long side has no
+                price.
 
         Note:
             This request is safe to replay and is the only POST the client retries. A
-            duplicate create leaves an unused activity rather than performing an action
-            twice.
+            duplicate create leaves an unused prediction rather than performing an
+            action twice.
         """
         payload = self._create_payload(
             media_type=media_type,
@@ -555,9 +623,12 @@ class AsyncActivities(_ActivitiesBase):
             space_id=space_id,
             user_id=user_id,
             account_id=account_id,
+            width=width,
+            height=height,
+            duration_seconds=duration_seconds,
         )
         data = await self._transport.request("POST", _BASE, json=payload, retry=True)
-        return ActivityCreateResponse.model_validate(data)
+        return PredictionCreateResponse.model_validate(data)
 
     async def upload(
         self,
@@ -583,57 +654,57 @@ class AsyncActivities(_ActivitiesBase):
         data, _, name = resolve_media(source, media_type=media_type, filename=filename)
         await self._transport.upload(upload_data.url, upload_data.fields, name, data)
 
-    async def confirm(self, activity_id: IdLike) -> Activity:
+    async def confirm(self, prediction_id: IdLike) -> Prediction:
         """
-        Confirm the upload, which moves the activity into processing.
+        Confirm the upload, which moves the prediction into processing.
 
         Args:
-            activity_id: The activity whose media has been uploaded.
+            prediction_id: The prediction whose media has been uploaded.
 
         Returns:
-            The activity, which is now processing.
+            The prediction, which is now processing.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = await self._transport.request("POST", f"{_BASE}{activity_id}/confirm")
-        return Activity.model_validate(data)
+        data = await self._transport.request("POST", f"{_BASE}/{prediction_id}/confirm")
+        return Prediction.model_validate(data)
 
-    async def get_status(self, activity_id: IdLike) -> ActivityStatusResponse:
+    async def get_status(self, prediction_id: IdLike) -> PredictionStatusResponse:
         """
-        Read just enough of an activity to know its current state.
+        Read just enough of a prediction to know its current state.
 
-        This response is deliberately smaller than `get` so polling an activity does not
-        repeatedly transfer its results.
+        This response is deliberately smaller than `get` so polling a prediction does
+        not repeatedly transfer its results.
 
         Args:
-            activity_id: The activity to check.
+            prediction_id: The prediction to check.
 
         Returns:
-            The id and current status of the activity.
+            The id and current status of the prediction.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = await self._transport.request("GET", f"{_BASE}{activity_id}/status")
-        return ActivityStatusResponse.model_validate(data)
+        data = await self._transport.request("GET", f"{_BASE}/{prediction_id}/status")
+        return PredictionStatusResponse.model_validate(data)
 
-    async def get(self, activity_id: IdLike) -> ActivityDetail:
+    async def get(self, prediction_id: IdLike) -> PredictionDetail:
         """
-        Read an activity in full, including its results.
+        Read a prediction in full, including its results.
 
         Args:
-            activity_id: The activity to fetch.
+            prediction_id: The prediction to fetch.
 
         Returns:
-            The activity. `result_payload` is `None` until processing finishes, and
+            The prediction. `result_payload` is `None` until processing finishes, and
             `payed_tokens` carries the actual cost.
 
         Raises:
-            GuardNotFoundError: Unknown activity, or not owned by you.
+            GuardNotFoundError: Unknown prediction, or not owned by you.
         """
-        data = await self._transport.request("GET", f"{_BASE}{activity_id}")
-        return ActivityDetail.model_validate(data)
+        data = await self._transport.request("GET", f"{_BASE}/{prediction_id}")
+        return PredictionDetail.model_validate(data)
 
     async def list(
         self,
@@ -643,33 +714,33 @@ class AsyncActivities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         start_date: Optional[DateLike] = None,
         end_date: Optional[DateLike] = None,
-        statuses: Optional[Sequence[Union[ActivityStatus, str]]] = None,
-        sort_by: Optional[Union[ActivityOrder, str]] = None,
+        statuses: Optional[Sequence[Union[PredictionStatus, str]]] = None,
+        sort_by: Optional[Union[PredictionOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         skip: int = 0,
         limit: int = MAX_LIMIT,
-    ) -> ActivityPage:
+    ) -> PredictionPage:
         """
-        List activities matching the given filters.
+        List predictions matching the given filters.
 
         Args:
-            user_id: Only this user's activities. This may be combined with
+            user_id: Only this user's predictions. This may be combined with
                 `organization_id`, and the API will apply both.
-            organization_id: Only this organization's activities.
-            space_id: Only activities in this space.
+            organization_id: Only this organization's predictions.
+            space_id: Only predictions in this space.
             start_date: A `datetime`, `date`, or an ISO-8601 string. The API keeps only
                 one year of history. Anything older is rejected locally before the
                 request is sent. Omitting it defaults to exactly one year ago. A naive
                 datetime is interpreted as UTC to match the server.
             end_date: Accepts the same types as start_date. Defaults to now.
-            statuses: Keep only activities with these statuses.
+            statuses: Keep only predictions with these statuses.
             sort_by: Valid options include `"created_at"`. Server default: `created_at`.
-            sort_order: `"asc"` or `"desc"`. Server default for activities: `desc`.
+            sort_order: `"asc"` or `"desc"`. Server default for predictions: `desc`.
             skip: Offset, 0 or greater.
             limit: Page size, 1-100.
 
         Returns:
-            An `ActivityPage`. You can iterate it like a list, or read `.count` for the
+            A `PredictionPage`. You can iterate it like a list, or read `.count` for the
             total matching the filter across all pages.
         """
         params = self._list_params(
@@ -685,7 +756,7 @@ class AsyncActivities(_ActivitiesBase):
             limit=limit,
         )
         data = await self._transport.request("GET", _BASE, params=params)
-        return ActivityPage.model_validate(data)
+        return PredictionPage.model_validate(data)
 
     async def iter_all(
         self,
@@ -695,31 +766,31 @@ class AsyncActivities(_ActivitiesBase):
         space_id: Optional[IdLike] = None,
         start_date: Optional[DateLike] = None,
         end_date: Optional[DateLike] = None,
-        statuses: Optional[Sequence[Union[ActivityStatus, str]]] = None,
-        sort_by: Optional[Union[ActivityOrder, str]] = None,
+        statuses: Optional[Sequence[Union[PredictionStatus, str]]] = None,
+        sort_by: Optional[Union[PredictionOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         page_size: int = MAX_LIMIT,
-    ) -> AsyncIterator[Activity]:
+    ) -> AsyncIterator[Prediction]:
         """
-        Yield every matching activity by fetching pages as needed.
+        Yield every matching prediction by fetching pages as needed.
 
         Args:
-            user_id: Only this user's activities. This may be combined with
+            user_id: Only this user's predictions. This may be combined with
                 `organization_id`, and the API will apply both.
-            organization_id: Only this organization's activities.
-            space_id: Only activities in this space.
+            organization_id: Only this organization's predictions.
+            space_id: Only predictions in this space.
             start_date: A `datetime`, `date`, or an ISO-8601 string. The API keeps only
                 one year of history. Anything older is rejected locally before the
                 request is sent. Omitting it defaults to exactly one year ago. A naive
                 datetime is interpreted as UTC to match the server.
             end_date: Accepts the same types as start_date. Defaults to now.
-            statuses: Keep only activities with these statuses.
+            statuses: Keep only predictions with these statuses.
             sort_by: Valid options include `"created_at"`. Server default: `created_at`.
-            sort_order: `"asc"` or `"desc"`. Server default for activities: `desc`.
+            sort_order: `"asc"` or `"desc"`. Server default for predictions: `desc`.
             page_size: Page size, 1-100.
 
         Yields:
-            Each matching activity, starting with the oldest page first.
+            Each matching prediction, starting with the oldest page first.
 
         Note:
             Pages are fetched lazily. Breaking out of the loop early stops the requests
@@ -739,8 +810,8 @@ class AsyncActivities(_ActivitiesBase):
                 skip=skip,
                 limit=page_size,
             )
-            for activity in page.data:
-                yield activity
+            for prediction in page.data:
+                yield prediction
 
             skip += len(page.data)
             if not page.data or len(page.data) < page_size or skip >= page.count:
@@ -748,24 +819,24 @@ class AsyncActivities(_ActivitiesBase):
 
     async def wait_until_done(
         self,
-        activity_id: IdLike,
+        prediction_id: IdLike,
         *,
         interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_POLL_TIMEOUT,
-    ) -> ActivityStatusResponse:
+    ) -> PredictionStatusResponse:
         """
-        Poll until the activity completes.
+        Poll until the prediction completes.
 
         Args:
-            activity_id: The activity to check.
+            prediction_id: The prediction to check.
             interval: Seconds to wait between polling requests.
             timeout: Maximum seconds to wait before raising an error.
 
         Returns:
-            The terminal status. Check `Activities.wait_until_done` for reference.
+            The terminal status. Check `Predictions.wait_until_done` for reference.
 
         Raises:
-            ActivityFailedError: The activity ended as `failed` or `canceled`.
+            PredictionFailedError: The prediction ended as `failed` or `canceled`.
             GuardTimeoutError: The deadline passed while it was still running.
 
         Note:
@@ -774,14 +845,14 @@ class AsyncActivities(_ActivitiesBase):
         """
         deadline = time.monotonic() + timeout
         while True:
-            status = await self.get_status(activity_id)
-            done = self._check_terminal(status, activity_id)
+            status = await self.get_status(prediction_id)
+            done = self._check_terminal(status, prediction_id)
             if done is not None:
                 return done
             if time.monotonic() + interval >= deadline:
                 raise GuardTimeoutError(
-                    f"Activity {activity_id} did not complete within {timeout}s "
+                    f"Prediction {prediction_id} did not complete within {timeout}s "
                     f"(last status: {status.status.value})",
-                    activity_id=_as_uuid(activity_id),
+                    prediction_id=_as_uuid(prediction_id),
                 )
             await asyncio.sleep(interval)

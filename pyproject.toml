@@ -1,6 +1,6 @@
 [project]
 name = "guard-client"
-version = "0.0.1"
+version = "0.0.2"
 description = "A Python client for seamlessly integrating visual safety filters into your applications"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local = ["guard-local-detector>=0.0.1"]
+local = ["guard-local-detector>=0.0.2"]
 
 [project.urls]
 Homepage = "https://elhio.com/"

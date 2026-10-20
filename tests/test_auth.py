@@ -17,8 +17,8 @@ from guard_client.transport import AsyncTransport, SyncTransport, TransportConfi
 
 from .conftest import BASE_URL, SPACE_ID, UPLOAD_URL, png_bytes
 
-SPACES_URL = f"{BASE_URL}/spaces/"
-ACTIVITIES_URL = f"{BASE_URL}/activities/"
+SPACES_URL = f"{BASE_URL}/api/v1/spaces"
+PREDICTIONS_URL = f"{BASE_URL}/api/v1/predictions"
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def test_resource_call_without_key_raises(keyless):
 @respx.mock
 def test_per_call_cloud_override_without_key_raises(keyless):
     """Verify the per-call cloud engine override does not escape the API key guard."""
-    route = respx.post(ACTIVITIES_URL).mock(return_value=httpx.Response(200, json={}))
+    route = respx.post(PREDICTIONS_URL).mock(return_value=httpx.Response(200, json={}))
 
     with pytest.raises(GuardError, match="API key is required"):
         keyless.analyze(png_bytes(), engine="cloud")
@@ -84,7 +84,7 @@ async def test_async_per_call_cloud_override_without_key_raises(async_keyless):
     """
     Verify the async per-call cloud engine override does not escape the API key guard.
     """
-    route = respx.post(ACTIVITIES_URL).mock(return_value=httpx.Response(200, json={}))
+    route = respx.post(PREDICTIONS_URL).mock(return_value=httpx.Response(200, json={}))
 
     with pytest.raises(GuardError, match="API key is required"):
         await async_keyless.analyze(png_bytes(), engine="cloud")
@@ -97,7 +97,7 @@ def test_error_names_every_way_to_supply_a_key(keyless):
     Check that the error message lists all valid methods to supply an API key.
     """
     with pytest.raises(GuardError) as excinfo:
-        keyless.tasks.list()
+        keyless.targets.list()
 
     message = str(excinfo.value)
     assert "api_key=" in message

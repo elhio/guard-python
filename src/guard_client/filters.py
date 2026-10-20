@@ -37,8 +37,8 @@ __all__ = [
 #: The server caps a single page at this many items.
 MAX_LIMIT = 100
 
-#: How far back activity history reaches. This matches `one_year_ago` in the
-#: `read_activities` endpoint of the API.
+#: How far back prediction history reaches. This matches `one_year_ago` in the
+#: `read_predictions` endpoint of the API.
 MAX_HISTORY = timedelta(days=365)
 
 #: Tolerance applied when checking `MAX_HISTORY` locally. The server computes its cutoff
@@ -275,7 +275,7 @@ def add_sort(
     Add `sort_by` and `sort_order` when given.
 
     Leaving them out lets the server apply its own default. The default differs per
-    resource. Spaces sort ascending, while activities and shares sort descending.
+    resource. Spaces sort ascending, while predictions and shares sort descending.
 
     Args:
         params: The query dict to add to. This is mutated in place.

@@ -1,5 +1,5 @@
 """
-Low-level bindings for the `/api/v1/predictors/` endpoints.
+Low-level bindings for the `/api/v1/predictors` endpoints.
 
 A predictor is the model that powers a space, and its ID is required to create one.
 Listing predictors is how a caller finds a valid `predictor_id`.
@@ -24,7 +24,7 @@ from .transport import AsyncTransport, SyncTransport
 __all__ = ["AsyncPredictors", "Predictors"]
 
 #: The base URL path for predictor endpoints.
-_BASE = "/api/v1/predictors/"
+_BASE = "/api/v1/predictors"
 
 
 class _PredictorsBase:
@@ -40,7 +40,7 @@ class _PredictorsBase:
         *,
         user_id: Optional[IdLike],
         organization_id: Optional[IdLike],
-        supported_task_ids: Optional[Sequence[IdLike]],
+        supported_target_ids: Optional[Sequence[IdLike]],
         sort_by: Optional[Union[PredictorOrder, str]],
         sort_order: Optional[Union[SortOrder, str]],
         skip: int,
@@ -55,7 +55,7 @@ class _PredictorsBase:
         Args:
             user_id: Only predictors available to this user.
             organization_id: Only predictors available to this organization.
-            supported_task_ids: Only predictors supporting all of these tasks.
+            supported_target_ids: Only predictors supporting all of these targets.
             sort_by: The field to sort the results by.
             sort_order: The direction to sort the results.
             skip: Offset of the results. Must be 0 or greater.
@@ -72,9 +72,9 @@ class _PredictorsBase:
 
         params: Dict[str, Any] = {"skip": skip, "limit": limit}
         add_ids(params, user_id=user_id, organization_id=organization_id)
-        task_ids = id_list(supported_task_ids, field="supported_task_ids")
-        if task_ids:
-            params["supported_task_ids"] = task_ids
+        target_ids = id_list(supported_target_ids, field="supported_target_ids")
+        if target_ids:
+            params["supported_target_ids"] = target_ids
         add_sort(params, sort_by, sort_order, PredictorOrder)
         return params
 
@@ -101,7 +101,7 @@ class Predictors(_PredictorsBase):
         *,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        supported_task_ids: Optional[Sequence[IdLike]] = None,
+        supported_target_ids: Optional[Sequence[IdLike]] = None,
         sort_by: Optional[Union[PredictorOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         skip: int = 0,
@@ -113,7 +113,7 @@ class Predictors(_PredictorsBase):
         Args:
             user_id: Only predictors available to this user.
             organization_id: Only predictors available to this organization.
-            supported_task_ids: Only predictors supporting all of these tasks.
+            supported_target_ids: Only predictors supporting all of these targets.
             sort_by: Valid options include `"name"` or `"created_at"`. Server default:
                 `"name"`.
             sort_order: `"asc"` or `"desc"`. Server default: `"asc"`.
@@ -129,7 +129,7 @@ class Predictors(_PredictorsBase):
         params = self._list_params(
             user_id=user_id,
             organization_id=organization_id,
-            supported_task_ids=supported_task_ids,
+            supported_target_ids=supported_target_ids,
             sort_by=sort_by,
             sort_order=sort_order,
             skip=skip,
@@ -143,7 +143,7 @@ class Predictors(_PredictorsBase):
         *,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        supported_task_ids: Optional[Sequence[IdLike]] = None,
+        supported_target_ids: Optional[Sequence[IdLike]] = None,
         sort_by: Optional[Union[PredictorOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         page_size: int = MAX_LIMIT,
@@ -154,7 +154,7 @@ class Predictors(_PredictorsBase):
         Args:
             user_id: Only predictors available to this user.
             organization_id: Only predictors available to this organization.
-            supported_task_ids: Only predictors supporting all of these tasks.
+            supported_target_ids: Only predictors supporting all of these targets.
             sort_by: Valid options include `"name"` or `"created_at"`.
             sort_order: `"asc"` or `"desc"`.
             page_size: The number of items to fetch per page. Defaults to `MAX_LIMIT`.
@@ -171,7 +171,7 @@ class Predictors(_PredictorsBase):
             page = self.list(
                 user_id=user_id,
                 organization_id=organization_id,
-                supported_task_ids=supported_task_ids,
+                supported_target_ids=supported_target_ids,
                 sort_by=sort_by,
                 sort_order=sort_order,
                 skip=skip,
@@ -206,7 +206,7 @@ class AsyncPredictors(_PredictorsBase):
         *,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        supported_task_ids: Optional[Sequence[IdLike]] = None,
+        supported_target_ids: Optional[Sequence[IdLike]] = None,
         sort_by: Optional[Union[PredictorOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         skip: int = 0,
@@ -218,7 +218,7 @@ class AsyncPredictors(_PredictorsBase):
         Args:
             user_id: Only predictors available to this user.
             organization_id: Only predictors available to this organization.
-            supported_task_ids: Only predictors supporting all of these tasks.
+            supported_target_ids: Only predictors supporting all of these targets.
             sort_by: Valid options include `"name"` or `"created_at"`.
             sort_order: `"asc"` or `"desc"`.
             skip: Offset. 0 or greater.
@@ -233,7 +233,7 @@ class AsyncPredictors(_PredictorsBase):
         params = self._list_params(
             user_id=user_id,
             organization_id=organization_id,
-            supported_task_ids=supported_task_ids,
+            supported_target_ids=supported_target_ids,
             sort_by=sort_by,
             sort_order=sort_order,
             skip=skip,
@@ -247,7 +247,7 @@ class AsyncPredictors(_PredictorsBase):
         *,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        supported_task_ids: Optional[Sequence[IdLike]] = None,
+        supported_target_ids: Optional[Sequence[IdLike]] = None,
         sort_by: Optional[Union[PredictorOrder, str]] = None,
         sort_order: Optional[Union[SortOrder, str]] = None,
         page_size: int = MAX_LIMIT,
@@ -258,7 +258,7 @@ class AsyncPredictors(_PredictorsBase):
         Args:
             user_id: Only predictors available to this user.
             organization_id: Only predictors available to this organization.
-            supported_task_ids: Only predictors supporting all of these tasks.
+            supported_target_ids: Only predictors supporting all of these targets.
             sort_by: Valid options include `"name"` or `"created_at"`.
             sort_order: `"asc"` or `"desc"`.
             page_size: The number of items to fetch per page. Defaults to `MAX_LIMIT`.
@@ -272,7 +272,7 @@ class AsyncPredictors(_PredictorsBase):
             page = await self.list(
                 user_id=user_id,
                 organization_id=organization_id,
-                supported_task_ids=supported_task_ids,
+                supported_target_ids=supported_target_ids,
                 sort_by=sort_by,
                 sort_order=sort_order,
                 skip=skip,

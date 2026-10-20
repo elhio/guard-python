@@ -12,11 +12,11 @@ import pytest
 import respx
 
 from guard_client import (
-    ActivityResultItem,
     DetectionResult,
     Engine,
     GuardError,
     MediaType,
+    PredictionResultItem,
     Share,
     UnsupportedMediaTypeError,
     load_media,
@@ -25,7 +25,7 @@ from guard_client import (
 )
 from guard_client import display as display_module
 
-from .conftest import TASK_ID, png_bytes, share_response
+from .conftest import TARGET_ID, png_bytes, share_response
 
 MEDIA_URL = "https://s3.test.invalid/app/results/solution.png"
 
@@ -57,10 +57,10 @@ def displayed(monkeypatch):
     return rendered
 
 
-def result_item(media_url=MEDIA_URL) -> ActivityResultItem:
-    """Create a mock ActivityResultItem for testing purposes."""
-    return ActivityResultItem(
-        task_id=TASK_ID, score=87, label="Deepfake", media_url=media_url
+def result_item(media_url=MEDIA_URL) -> PredictionResultItem:
+    """Create a mock PredictionResultItem for testing purposes."""
+    return PredictionResultItem(
+        target_id=TARGET_ID, score=87, label="Deepfake", media_url=media_url
     )
 
 
@@ -102,7 +102,7 @@ def test_load_media_from_url():
 
 @respx.mock
 def test_load_media_from_result_item():
-    """Verify load_media successfully extracts media from an ActivityResultItem."""
+    """Verify load_media successfully extracts media from a PredictionResultItem."""
     respx.get(MEDIA_URL).mock(return_value=httpx.Response(200, content=png_bytes()))
 
     data, _, _ = load_media(result_item())
@@ -234,11 +234,11 @@ def test_show_detection_result_renders_each_item(displayed, viewer):
     result = DetectionResult(
         engine=Engine.CLOUD,
         results=[
-            ActivityResultItem(
-                task_id=TASK_ID, score=1, label="A", media_url=MEDIA_URL
+            PredictionResultItem(
+                target_id=TARGET_ID, score=1, label="A", media_url=MEDIA_URL
             ),
-            ActivityResultItem(
-                task_id=TASK_ID, score=2, label="B", media_url=MEDIA_URL
+            PredictionResultItem(
+                target_id=TARGET_ID, score=2, label="B", media_url=MEDIA_URL
             ),
         ],
     )
@@ -254,7 +254,7 @@ def test_show_detection_result_skips_items_without_media(displayed, capsys):
     """Verify show() safely skips results missing a media_url and prints a warning."""
     result = DetectionResult(
         engine=Engine.LOCAL,
-        results=[ActivityResultItem(task_id=TASK_ID, score=1, label="A")],
+        results=[PredictionResultItem(target_id=TARGET_ID, score=1, label="A")],
     )
 
     show(result)
@@ -397,7 +397,7 @@ def test_save_overwrites_by_default(tmp_path, png):
 
 @respx.mock
 def test_save_a_result_item(tmp_path, viewer):
-    """Verify save() properly downloads and writes an ActivityResultItem."""
+    """Verify save() properly downloads and writes a PredictionResultItem."""
     respx.get(MEDIA_URL).mock(return_value=httpx.Response(200, content=png_bytes()))
 
     target = save(result_item(), tmp_path / "solution.png")

@@ -126,7 +126,7 @@ def test_analyze_returns_unified_result():
     result = runner.analyze(png_bytes())
 
     assert result.engine is Engine.LOCAL
-    assert result.activity_id is None  # local runs create no activity
+    assert result.prediction_id is None  # local runs create no prediction
     assert len(result.results) == 1
     assert result.results[0].label == "safe"
     assert result.results[0].score == 87
@@ -193,7 +193,7 @@ def test_client_routes_to_local_engine():
     result = client.analyze(png_bytes())
 
     assert result.engine is Engine.LOCAL
-    assert result.activity_id is None
+    assert result.prediction_id is None
 
 
 def test_per_call_engine_override_to_local():
@@ -357,25 +357,32 @@ def test_adapt_handles_list_of_entries():
     assert [i.score for i in items] == [10, 90]
 
 
-def test_adapt_derives_stable_task_ids():
+def test_adapt_derives_stable_target_ids():
     """
-    Ensure derived local task IDs are consistent and reproducible so callers can key off
-    them.
+    Ensure derived local target IDs are consistent and reproducible so callers can key
+    off them.
     """
     first = _adapt({"label": "deepfake", "score": 0.5})
     second = _adapt({"label": "deepfake", "score": 0.9})
 
-    assert first[0].task_id == second[0].task_id
+    assert first[0].target_id == second[0].target_id
 
 
-def test_adapt_honours_supplied_task_id():
+def test_adapt_honours_supplied_target_id():
     """
-    Verify the adapter preserves an explicit task ID if one is supplied by the engine.
+    Verify the adapter preserves an explicit target ID if one is supplied by the engine.
     """
-    task_id = "44444444-4444-4444-4444-444444444444"
-    items = _adapt({"label": "x", "score": 1, "task_id": task_id})
+    target_id = "44444444-4444-4444-4444-444444444444"
+    items = _adapt({"label": "x", "score": 1, "target_id": target_id})
 
-    assert str(items[0].task_id) == task_id
+    assert str(items[0].target_id) == target_id
+
+
+def test_adapt_accepts_the_engines_older_task_id_key():
+    target_id = "55555555-5555-5555-5555-555555555555"
+    items = _adapt({"label": "x", "score": 1, "task_id": target_id})
+
+    assert str(items[0].target_id) == target_id
 
 
 def test_adapt_tolerates_empty_and_junk():

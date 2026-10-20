@@ -1,12 +1,13 @@
 """
-Low-level bindings for the `/api/v1/reactions/` endpoint.
+Low-level bindings for the `/api/v1/reactions` endpoint.
 
-A reaction is feedback on one task result for one activity. It answers whether the
+A reaction is feedback on one target result for one prediction. It answers whether the
 detection was right, and if not, what the expected result was.
 
-Two API rules shape this module: First, you may only react to your own activity.
+Two API rules shape this module: First, you may only react to your own prediction.
 Anything else returns a 404, which is indistinguishable from an unknown id. Second, only
-one reaction is allowed per activity and task. A second attempt returns a 409 conflict.
+one reaction is allowed per prediction and target. A second attempt returns a 409
+conflict.
 
 Reading or removing a reaction is an admin-only operation, so this resource is
 create-only.
@@ -19,11 +20,11 @@ from typing import Any, Dict, Optional
 from .exceptions import GuardError
 from .filters import IdLike, validate_length
 from .models import (
-    ActivityResultItem,
+    PredictionResultItem,
     Reaction,
     ResultSource,
-    activity_id_of,
     ensure_bool,
+    prediction_id_of,
     result_items_of,
 )
 from .transport import AsyncTransport, SyncTransport
@@ -31,7 +32,7 @@ from .transport import AsyncTransport, SyncTransport
 __all__ = ["AsyncReactions", "Reactions"]
 
 #: The base URL path for the reactions endpoints.
-_BASE = "/api/v1/reactions/"
+_BASE = "/api/v1/reactions"
 
 #: The server-side constraint on the maximum length of a reaction description.
 DESCRIPTION_MAX_LENGTH = 255
@@ -48,8 +49,8 @@ class _ReactionsBase:
     @staticmethod
     def _create_payload(
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         is_positive: bool,
         key_value: Optional[int],
         description: Optional[str],
@@ -60,8 +61,8 @@ class _ReactionsBase:
         The arguments mirror `Reactions.create`, but none are optional here.
 
         Args:
-            activity_id: The ID of the activity the result belongs to.
-            task_id: The ID of the task result being reacted to.
+            prediction_id: The ID of the prediction the result belongs to.
+            target_id: The ID of the target result being reacted to.
             is_positive: Indicates if the detection was correct.
             key_value: The expected result as an integer key.
             description: A free text description.
@@ -74,8 +75,8 @@ class _ReactionsBase:
                 integer, or `description` exceeds 255 characters.
         """
         payload: Dict[str, Any] = {
-            "activity_id": str(activity_id),
-            "task_id": str(task_id),
+            "prediction_id": str(prediction_id),
+            "target_id": str(target_id),
             "is_positive": ensure_bool(is_positive, field="is_positive"),
         }
 
@@ -86,8 +87,8 @@ class _ReactionsBase:
             if isinstance(key_value, bool) or not isinstance(key_value, int):
                 raise GuardError(
                     f"Invalid key_value={key_value!r}. Expected an integer key from "
-                    f"the task's `reactions` map, e.g. "
-                    f"task.reactions -> {{1: 'Real photo'}}"
+                    f"the target's `reactions` map, e.g. "
+                    f"target.reactions -> {{1: 'Real photo'}}"
                 )
             payload["key_value"] = key_value
 
@@ -101,36 +102,38 @@ class _ReactionsBase:
         return payload
 
     @staticmethod
-    def _resolve_source(source: ResultSource, item: ActivityResultItem) -> IdLike:
+    def _resolve_source(source: ResultSource, item: PredictionResultItem) -> IdLike:
         """
-        Get the activity id while checking the item really belongs to this result.
+        Get the prediction id while checking the item really belongs to this result.
 
         Args:
-            source: A result from `analyze()` or `activities.get()`.
+            source: A result from `analyze()` or `predictions.get()`.
             item: The result item being commented on.
 
         Returns:
-            The activity id behind the result.
+            The prediction id behind the result.
 
         Raises:
-            GuardError: If the source came from the local engine, meaning no activity
-                exists on the server, or if the item belongs to a different activity.
+            GuardError: If the source came from the local engine, meaning no prediction
+                exists on the server, or if the item belongs to a different prediction.
         """
-        activity_id = activity_id_of(source)
-        if activity_id is None:
+        prediction_id = prediction_id_of(source)
+        if prediction_id is None:
             raise GuardError(
-                "This result came from the local engine, so no activity exists on the "
-                "server to react to. Reactions apply to cloud results only."
+                "This result came from the local engine, so no prediction exists on "
+                "the server to react to. Reactions apply to cloud results only."
             )
 
         known = result_items_of(source)
-        if not any(existing.task_id == item.task_id for existing in known):
-            available = ", ".join(str(existing.task_id) for existing in known) or "none"
+        if not any(existing.target_id == item.target_id for existing in known):
+            available = (
+                ", ".join(str(existing.target_id) for existing in known) or "none"
+            )
             raise GuardError(
-                f"task_id {item.task_id} is not part of this activity's results "
+                f"target_id {item.target_id} is not part of this prediction's results "
                 f"(available: {available})."
             )
-        return activity_id
+        return prediction_id
 
 
 class Reactions(_ReactionsBase):
@@ -153,22 +156,22 @@ class Reactions(_ReactionsBase):
     def create(
         self,
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         is_positive: bool,
         key_value: Optional[int] = None,
         description: Optional[str] = None,
     ) -> Reaction:
         """
-        Submit feedback on one task result.
+        Submit feedback on one target result.
 
         Args:
-            activity_id: The activity the result belongs to. It must be your own.
-            task_id: Which task result you are reacting to.
+            prediction_id: The prediction the result belongs to. It must be your own.
+            target_id: Which target result you are reacting to.
             is_positive: `True` if the detection was correct. Accepts `True` or `False`
                 only.
-            key_value: The expected result as an integer key of the task `reactions`
-                map. See `Task.reactions` for the choices.
+            key_value: The expected result as an integer key of the target `reactions`
+                map. See `Target.reactions` for the choices.
             description: Free text up to 255 characters. Blank counts as unset.
 
         Returns:
@@ -177,15 +180,16 @@ class Reactions(_ReactionsBase):
         Raises:
             GuardError: If a value is invalid. This is raised before any request is
                 sent.
-            GuardNotFoundError: If the activity is unknown or it is not yours. The API
+            GuardNotFoundError: If the prediction is unknown or it is not yours. The API
                 does not distinguish between the two.
-            GuardConflictError: If you have already reacted to this activity and task.
+            GuardConflictError: If you have already reacted to this prediction and
+                target.
 
         Examples:
             ```python
             client.reactions.create(
-                activity_id=result.activity_id,
-                task_id=item.task_id,
+                prediction_id=result.prediction_id,
+                target_id=item.target_id,
                 is_positive=False,
                 key_value=2,
                 description="This is a real photo of me",
@@ -193,21 +197,21 @@ class Reactions(_ReactionsBase):
             ```
         """
         payload = self._create_payload(
-            activity_id=activity_id,
-            task_id=task_id,
+            prediction_id=prediction_id,
+            target_id=target_id,
             is_positive=is_positive,
             key_value=key_value,
             description=description,
         )
-        # not retried: a replay would trip the one-reaction-per-task guard and report a
-        # 409 for a reaction that actually succeeded
+        # not retried: a replay would trip the one-reaction-per-target guard and report
+        # a 409 for a reaction that actually succeeded
         data = self._transport.request("POST", _BASE, json=payload)
         return Reaction.model_validate(data)
 
     def create_for(
         self,
         source: ResultSource,
-        item: ActivityResultItem,
+        item: PredictionResultItem,
         *,
         is_positive: bool,
         key_value: Optional[int] = None,
@@ -218,10 +222,10 @@ class Reactions(_ReactionsBase):
 
         Args:
             source: Either a `DetectionResult` from `GuardClient.analyze` or an
-                `ActivityDetail` from `activities.get()`.
-            item: The `ActivityResultItem` being commented on.
+                `PredictionDetail` from `predictions.get()`.
+            item: The `PredictionResultItem` being commented on.
             is_positive: `True` if the detection was correct.
-            key_value: The expected result as an integer key of the task `reactions`
+            key_value: The expected result as an integer key of the target `reactions`
                 map.
             description: Free text up to 255 characters.
 
@@ -232,10 +236,10 @@ class Reactions(_ReactionsBase):
             GuardError: If the source is a local result or the item is not one of its
                 results. Both checks happen before any request is sent.
         """
-        activity_id = self._resolve_source(source, item)
+        prediction_id = self._resolve_source(source, item)
         return self.create(
-            activity_id=activity_id,
-            task_id=item.task_id,
+            prediction_id=prediction_id,
+            target_id=item.target_id,
             is_positive=is_positive,
             key_value=key_value,
             description=description,
@@ -262,21 +266,21 @@ class AsyncReactions(_ReactionsBase):
     async def create(
         self,
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         is_positive: bool,
         key_value: Optional[int] = None,
         description: Optional[str] = None,
     ) -> Reaction:
         """
-        Submit feedback on one task result.
+        Submit feedback on one target result.
 
         Args:
-            activity_id: The activity the result belongs to. It must be your own.
-            task_id: Which task result you are reacting to.
+            prediction_id: The prediction the result belongs to. It must be your own.
+            target_id: Which target result you are reacting to.
             is_positive: `True` if the detection was correct. Accepts `True` or `False`
                 only.
-            key_value: The expected result as an integer key of the task `reactions`
+            key_value: The expected result as an integer key of the target `reactions`
                 map.
             description: Free text up to 255 characters. Blank counts as unset.
 
@@ -285,12 +289,12 @@ class AsyncReactions(_ReactionsBase):
 
         Raises:
             GuardError: If a value is invalid. This is raised before any request.
-            GuardNotFoundError: If the activity is unknown or not yours.
-            GuardConflictError: If you already reacted to this activity and task.
+            GuardNotFoundError: If the prediction is unknown or not yours.
+            GuardConflictError: If you already reacted to this prediction and target.
         """
         payload = self._create_payload(
-            activity_id=activity_id,
-            task_id=task_id,
+            prediction_id=prediction_id,
+            target_id=target_id,
             is_positive=is_positive,
             key_value=key_value,
             description=description,
@@ -302,7 +306,7 @@ class AsyncReactions(_ReactionsBase):
     async def create_for(
         self,
         source: ResultSource,
-        item: ActivityResultItem,
+        item: PredictionResultItem,
         *,
         is_positive: bool,
         key_value: Optional[int] = None,
@@ -313,10 +317,10 @@ class AsyncReactions(_ReactionsBase):
 
         Args:
             source: Either a `DetectionResult` from `GuardClient.analyze` or an
-                `ActivityDetail` from `activities.get()`.
-            item: The `ActivityResultItem` being commented on.
+                `PredictionDetail` from `predictions.get()`.
+            item: The `PredictionResultItem` being commented on.
             is_positive: `True` if the detection was correct.
-            key_value: The expected result as an integer key of the task `reactions`
+            key_value: The expected result as an integer key of the target `reactions`
                 map.
             description: Free text up to 255 characters.
 
@@ -327,10 +331,10 @@ class AsyncReactions(_ReactionsBase):
             GuardError: If the source is a local result or the item is not one of its
                 results.
         """
-        activity_id = self._resolve_source(source, item)
+        prediction_id = self._resolve_source(source, item)
         return await self.create(
-            activity_id=activity_id,
-            task_id=item.task_id,
+            prediction_id=prediction_id,
+            target_id=item.target_id,
             is_positive=is_positive,
             key_value=key_value,
             description=description,

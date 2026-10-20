@@ -1,5 +1,5 @@
 """
-Estimates what an activity will cost before creating it.
+Estimates what a prediction will cost before creating it.
 
 The calculation comes down to the following formula:
     `tokens = frames x resolution_cost x model_multiplier`
@@ -32,8 +32,8 @@ Examples:
 
 Warning:
     This is an estimate. The API currently reserves only the minimum possible cost when
-    an activity is created, and the authoritative figure is `payed_tokens` on the
-    finished activity. Expect the two to differ.
+    a prediction is created, and the authoritative figure is `payed_tokens` on the
+    finished prediction. Expect the two to differ.
 
 Note:
     There are two deliberate consequences of pricing by the long side. An ultrawide
@@ -78,7 +78,7 @@ MAX_LONG_SIDE = RESOLUTION_TIERS[-1][0]
 
 class TokenEstimate(BaseModel):
     """
-    The projected cost of one activity, along with the inputs that produced it.
+    The projected cost of one prediction, along with the inputs that produced it.
 
     Carrying the breakdown alongside the total lets a caller explain the number rather
     than just report it.

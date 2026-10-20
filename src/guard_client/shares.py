@@ -1,12 +1,12 @@
 """
-Low-level bindings for the `/api/v1/activities/shares` endpoints.
+Low-level bindings for the `/api/v1/predictions/shares` endpoints.
 
-A share is a public link to one task result for an activity. Three API facts shape this
-module: First, the activity must have finished processing. The task must appear in its
-results, or the API answers 400 `Invalid task`. Second, only one share is allowed per
-activity, and there is no delete endpoint. A link cannot be revoked; it can only be left
-to expire. Third, authentication requires a full identity. As everywhere in this client,
-an API key is required.
+A share is a public link to one target result for a prediction. Three API facts shape
+this module: First, the prediction must have finished processing. The target must appear
+in its results, or the API answers 400 `Invalid target`. Second, only one share is
+allowed per prediction, and there is no delete endpoint. A link cannot be revoked; it
+can only be left to expire. Third, authentication requires a full identity. As
+everywhere in this client, an API key is required.
 """
 
 from __future__ import annotations
@@ -23,14 +23,14 @@ from .filters import (
     validate_pagination,
 )
 from .models import (
-    ActivityResultItem,
+    PredictionResultItem,
     ResultSource,
     Share,
     ShareOrder,
     SharePage,
     ShareStatus,
     SortOrder,
-    activity_id_of,
+    prediction_id_of,
     result_items_of,
 )
 from .transport import AsyncTransport, SyncTransport
@@ -38,7 +38,7 @@ from .transport import AsyncTransport, SyncTransport
 __all__ = ["AsyncShares", "Shares"]
 
 #: The base URL path for the shares endpoints.
-_BASE = "/api/v1/activities/shares/"
+_BASE = "/api/v1/predictions/shares"
 
 #: Server-side minimum bound on `expires_in` (days).
 MIN_EXPIRES_IN = 1
@@ -93,7 +93,7 @@ class _SharesBase:
         validate_pagination(skip, limit)
 
         params: Dict[str, Any] = {"skip": skip, "limit": limit}
-        # like /activities/ and unlike /spaces/, this route applies both owner filters
+        # like /predictions/ and unlike /spaces/, this route applies both owner filters
         # independently rather than rejecting the combination
         add_ids(params, user_id=user_id, organization_id=organization_id)
         add_statuses(params, statuses, ShareStatus)
@@ -103,8 +103,8 @@ class _SharesBase:
     @staticmethod
     def _create_payload(
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         expires_in: Optional[int],
     ) -> Dict[str, Any]:
         """
@@ -113,8 +113,8 @@ class _SharesBase:
         The arguments mirror `Shares.create`, but none are optional here.
 
         Args:
-            activity_id: The ID of the activity to share.
-            task_id: The ID of the task result to share.
+            prediction_id: The ID of the prediction to share.
+            target_id: The ID of the target result to share.
             expires_in: Lifetime in days, 1-7.
 
         Returns:
@@ -125,8 +125,8 @@ class _SharesBase:
             GuardError: If `expires_in` is not an integer or falls outside 1-7.
         """
         payload: Dict[str, Any] = {
-            "activity_id": str(activity_id),
-            "task_id": str(task_id),
+            "prediction_id": str(prediction_id),
+            "target_id": str(target_id),
         }
         if expires_in is not None:
             # bool subclasses int, so True would otherwise pass as 1 day
@@ -144,44 +144,46 @@ class _SharesBase:
         return payload
 
     @staticmethod
-    def _resolve_source(source: ResultSource, item: ActivityResultItem) -> IdLike:
+    def _resolve_source(source: ResultSource, item: PredictionResultItem) -> IdLike:
         """
-        Get the activity id while checking the item really belongs to this result.
+        Get the prediction id while checking the item really belongs to this result.
 
-        The membership check is the local stand-in for the API 400 `Invalid task` error,
-        which it raises when the task is absent from the activity results.
+        The membership check is the local stand-in for the API 400 `Invalid target`
+        error, which it raises when the target is absent from the prediction results.
 
         Args:
-            source: A result from `analyze()` or `activities.get()`.
+            source: A result from `analyze()` or `predictions.get()`.
             item: The result item being shared.
 
         Returns:
-            The activity id behind the result.
+            The prediction id behind the result.
 
         Raises:
-            GuardError: If the source came from the local engine, meaning no activity
-                exists on the server, or if the item belongs to a different activity.
+            GuardError: If the source came from the local engine, meaning no prediction
+                exists on the server, or if the item belongs to a different prediction.
         """
-        activity_id = activity_id_of(source)
-        if activity_id is None:
+        prediction_id = prediction_id_of(source)
+        if prediction_id is None:
             raise GuardError(
-                "This result came from the local engine, so no activity exists on the "
-                "server to share. Shares apply to cloud results only."
+                "This result came from the local engine, so no prediction exists on "
+                "the server to share. Shares apply to cloud results only."
             )
 
         known = result_items_of(source)
-        if not any(existing.task_id == item.task_id for existing in known):
-            available = ", ".join(str(existing.task_id) for existing in known) or "none"
-            raise GuardError(
-                f"task_id {item.task_id} is not part of this activity's results "
-                f"(available: {available}). Only a completed activity can be shared."
+        if not any(existing.target_id == item.target_id for existing in known):
+            available = (
+                ", ".join(str(existing.target_id) for existing in known) or "none"
             )
-        return activity_id
+            raise GuardError(
+                f"target_id {item.target_id} is not part of this prediction's results "
+                f"(available: {available}). Only a completed prediction can be shared."
+            )
+        return prediction_id
 
 
 class Shares(_SharesBase):
     """
-    Synchronous activity-share endpoints.
+    Synchronous prediction-share endpoints.
 
     This class is accessed through the client rather than being constructed directly,
     and it shares the client connection pool.
@@ -208,7 +210,7 @@ class Shares(_SharesBase):
         limit: int = MAX_LIMIT,
     ) -> SharePage:
         """
-        List the activity shares visible to you.
+        List the prediction shares visible to you.
 
         Args:
             user_id: Only your own ID is accepted. Anything else returns a 404. A
@@ -225,8 +227,8 @@ class Shares(_SharesBase):
             A `SharePage`. You can iterate it like a list or read `.count`.
 
         Note:
-            There is no `activity_id` filter. Shares cannot be looked up by the activity
-            they belong to.
+            There is no `prediction_id` filter. Shares cannot be looked up by the
+            prediction they belong to.
         """
         params = self._list_params(
             user_id=user_id,
@@ -299,23 +301,23 @@ class Shares(_SharesBase):
             GuardNotFoundError: If the share is unknown, expired beyond visibility, or
                 not yours.
         """
-        data = self._transport.request("GET", f"{_BASE}{share_id}")
+        data = self._transport.request("GET", f"{_BASE}/{share_id}")
         return Share.model_validate(data)
 
     def create(
         self,
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         expires_in: Optional[int] = None,
     ) -> Share:
         """
-        Create a public link to one task result.
+        Create a public link to one target result.
 
         Args:
-            activity_id: The activity to share. Must be your own and completed.
-            task_id: Which task result the link shows. It must appear in the activity
-                results or the API answers 400.
+            prediction_id: The prediction to share. Must be your own and completed.
+            target_id: Which target result the link shows. It must appear in the
+                prediction results or the API answers 400.
             expires_in: Lifetime in days, 1-7. Omitting it means the server
                 default of 7 applies.
 
@@ -324,15 +326,15 @@ class Shares(_SharesBase):
 
         Raises:
             GuardError: If `expires_in` is out of range. Raised before any request.
-            GuardNotFoundError: If the activity is unknown, not yours, or its media is
+            GuardNotFoundError: If the prediction is unknown, not yours, or its media is
                 gone.
-            GuardConflictError: If this activity has already been shared.
-            GuardAPIError: 400 error if the task is not in the activity results,
-                or if the task has no associated media.
+            GuardConflictError: If this prediction has already been shared.
+            GuardAPIError: 400 error if the target is not in the prediction results,
+                or if the target has no associated media.
 
         Examples:
             ```python
-            share = client.shares.create(activity_id=A, task_id=T, expires_in=1)
+            share = client.shares.create(prediction_id=A, target_id=T, expires_in=1)
             print(share.share_url)
             ```
 
@@ -340,17 +342,17 @@ class Shares(_SharesBase):
             There is no way to revoke a share. It lives until it expires.
         """
         payload = self._create_payload(
-            activity_id=activity_id, task_id=task_id, expires_in=expires_in
+            prediction_id=prediction_id, target_id=target_id, expires_in=expires_in
         )
-        # not retried: a replay would trip the one-share-per-activity guard and report a
-        # 409 for a share that actually succeeded
+        # not retried: a replay would trip the one-share-per-prediction guard and report
+        # a 409 for a share that actually succeeded
         data = self._transport.request("POST", _BASE, json=payload)
         return Share.model_validate(data)
 
     def create_for(
         self,
         source: ResultSource,
-        item: ActivityResultItem,
+        item: PredictionResultItem,
         *,
         expires_in: Optional[int] = None,
     ) -> Share:
@@ -359,8 +361,8 @@ class Shares(_SharesBase):
 
         Args:
             source: Either a `DetectionResult` from `GuardClient.analyze` or an
-                `ActivityDetail` from `activities.get()`.
-            item: The `ActivityResultItem` being shared.
+                `PredictionDetail` from `predictions.get()`.
+            item: The `PredictionResultItem` being shared.
             expires_in: Lifetime in days, 1-7. Omitting it means the server default of 7
                 applies.
 
@@ -371,15 +373,15 @@ class Shares(_SharesBase):
             GuardError: If the source is a local result or the item is not one of its
                 results. Both checks happen before any request is sent.
         """
-        activity_id = self._resolve_source(source, item)
+        prediction_id = self._resolve_source(source, item)
         return self.create(
-            activity_id=activity_id, task_id=item.task_id, expires_in=expires_in
+            prediction_id=prediction_id, target_id=item.target_id, expires_in=expires_in
         )
 
 
 class AsyncShares(_SharesBase):
     """
-    Asynchronous activity-share endpoints.
+    Asynchronous prediction-share endpoints.
 
     This class mirrors `Shares` method for method. See the synchronous methods for full
     argument details.
@@ -488,23 +490,23 @@ class AsyncShares(_SharesBase):
         Raises:
             GuardNotFoundError: If the share is unknown or not yours.
         """
-        data = await self._transport.request("GET", f"{_BASE}{share_id}")
+        data = await self._transport.request("GET", f"{_BASE}/{share_id}")
         return Share.model_validate(data)
 
     async def create(
         self,
         *,
-        activity_id: IdLike,
-        task_id: IdLike,
+        prediction_id: IdLike,
+        target_id: IdLike,
         expires_in: Optional[int] = None,
     ) -> Share:
         """
-        Create a public link to one task result.
+        Create a public link to one target result.
 
         Args:
-            activity_id: The activity to share. Must be your own and completed.
-            task_id: Which task result the link shows. It must appear in the activity
-                results or the API answers 400.
+            prediction_id: The prediction to share. Must be your own and completed.
+            target_id: Which target result the link shows. It must appear in the
+                prediction results or the API answers 400.
             expires_in: Lifetime in days, 1-7. Omitting it means the server default of
                 7 applies.
 
@@ -514,12 +516,12 @@ class AsyncShares(_SharesBase):
 
         Raises:
             GuardError: If `expires_in` is out of range.
-            GuardConflictError: If this activity has already been shared.
-            GuardNotFoundError: If the activity is unknown, not yours, or its media is
+            GuardConflictError: If this prediction has already been shared.
+            GuardNotFoundError: If the prediction is unknown, not yours, or its media is
                 gone.
         """
         payload = self._create_payload(
-            activity_id=activity_id, task_id=task_id, expires_in=expires_in
+            prediction_id=prediction_id, target_id=target_id, expires_in=expires_in
         )
         # not retried: see the note on Shares.create
         data = await self._transport.request("POST", _BASE, json=payload)
@@ -528,7 +530,7 @@ class AsyncShares(_SharesBase):
     async def create_for(
         self,
         source: ResultSource,
-        item: ActivityResultItem,
+        item: PredictionResultItem,
         *,
         expires_in: Optional[int] = None,
     ) -> Share:
@@ -537,8 +539,8 @@ class AsyncShares(_SharesBase):
 
         Args:
             source: Either a `DetectionResult` from `GuardClient.analyze` or an
-                `ActivityDetail` from `activities.get()`.
-            item: The `ActivityResultItem` being shared.
+                `PredictionDetail` from `predictions.get()`.
+            item: The `PredictionResultItem` being shared.
             expires_in: Lifetime in days, 1-7. Omitting it means the server default of 7
                 applies.
 
@@ -549,7 +551,7 @@ class AsyncShares(_SharesBase):
             GuardError: If the source is a local result or the item is not one of its
                 results. Both checks happen before any request is sent.
         """
-        activity_id = self._resolve_source(source, item)
+        prediction_id = self._resolve_source(source, item)
         return await self.create(
-            activity_id=activity_id, task_id=item.task_id, expires_in=expires_in
+            prediction_id=prediction_id, target_id=item.target_id, expires_in=expires_in
         )

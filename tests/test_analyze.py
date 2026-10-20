@@ -4,25 +4,29 @@ End-to-end tests for the high-level analyze lifecycle.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
 
 from guard_client import (
-    ActivityFailedError,
     AsyncGuardClient,
     Engine,
     GuardClient,
     GuardError,
+    MediaType,
+    PredictionFailedError,
     UnsupportedMediaTypeError,
 )
+from guard_client.probe import MediaInfo
 
 from .conftest import (
-    ACTIVITY_ID,
     API_KEY,
     BASE_URL,
+    PREDICTION_ID,
     SPACE_ID,
-    TASK_ID,
+    TARGET_ID,
     UPLOAD_URL,
     confirm_response,
     create_response,
@@ -31,34 +35,34 @@ from .conftest import (
     status_response,
 )
 
-ACTIVITIES_URL = f"{BASE_URL}/api/v1/activities/"
+PREDICTIONS_URL = f"{BASE_URL}/api/v1/predictions"
 
 
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     """Ensure polling tests do not actually wait during execution."""
-    monkeypatch.setattr("guard_client.activities.time.sleep", lambda _: None)
+    monkeypatch.setattr("guard_client.predictions.time.sleep", lambda _: None)
 
     async def _async_sleep(_):
         return None
 
-    monkeypatch.setattr("guard_client.activities.asyncio.sleep", _async_sleep)
+    monkeypatch.setattr("guard_client.predictions.asyncio.sleep", _async_sleep)
 
 
 def mock_full_lifecycle(status: str = "completed"):
     """Wire up every route the happy path touches and return the route objects."""
     return {
-        "create": respx.post(ACTIVITIES_URL).mock(
+        "create": respx.post(PREDICTIONS_URL).mock(
             return_value=httpx.Response(200, json=create_response())
         ),
         "upload": respx.post(UPLOAD_URL).mock(return_value=httpx.Response(204)),
-        "confirm": respx.post(f"{ACTIVITIES_URL}{ACTIVITY_ID}/confirm").mock(
+        "confirm": respx.post(f"{PREDICTIONS_URL}/{PREDICTION_ID}/confirm").mock(
             return_value=httpx.Response(200, json=confirm_response())
         ),
-        "status": respx.get(f"{ACTIVITIES_URL}{ACTIVITY_ID}/status").mock(
+        "status": respx.get(f"{PREDICTIONS_URL}/{PREDICTION_ID}/status").mock(
             return_value=httpx.Response(200, json=status_response(status))
         ),
-        "detail": respx.get(f"{ACTIVITIES_URL}{ACTIVITY_ID}").mock(
+        "detail": respx.get(f"{PREDICTIONS_URL}/{PREDICTION_ID}").mock(
             return_value=httpx.Response(200, json=detail_response(status))
         ),
     }
@@ -75,10 +79,10 @@ def test_analyze_runs_full_lifecycle(client, png):
         assert route.called, f"{name} was never called"
 
     assert result.engine is Engine.CLOUD
-    assert result.activity_id == ACTIVITY_ID
+    assert result.prediction_id == PREDICTION_ID
     assert result.max_score == 87
     assert result.results[0].label == "Deepfake"
-    assert result.score_for(TASK_ID) == 87
+    assert result.score_for(TARGET_ID) == 87
 
 
 @respx.mock
@@ -99,7 +103,7 @@ def test_analyze_accepts_raw_bytes(client):
 
     result = client.analyze(png_bytes())
 
-    assert result.activity_id == ACTIVITY_ID
+    assert result.prediction_id == PREDICTION_ID
 
 
 @respx.mock
@@ -110,7 +114,7 @@ def test_analyze_accepts_file_object(client, png):
     with open(png, "rb") as handle:
         result = client.analyze(handle)
 
-    assert result.activity_id == ACTIVITY_ID
+    assert result.prediction_id == PREDICTION_ID
 
 
 @respx.mock
@@ -123,6 +127,70 @@ def test_analyze_sends_detected_type_and_size(client, png):
     body = routes["create"].calls.last.request.read().decode().replace(" ", "")
     assert '"media_type":"image/png"' in body
     assert f'"media_size":{len(png_bytes())}' in body
+
+
+def create_body(routes):
+    """The JSON body of the create request."""
+    return json.loads(routes["create"].calls.last.request.read())
+
+
+@respx.mock
+def test_analyze_declares_the_probed_dimensions(client, png):
+    """Ensure an image's dimensions are declared, and no duration for a still."""
+    routes = mock_full_lifecycle()
+
+    client.analyze(png)
+
+    body = create_body(routes)
+    assert (body["width"], body["height"]) == (1, 1)
+    assert "duration_seconds" not in body
+
+
+@respx.mock
+def test_analyze_declares_a_videos_duration(client, monkeypatch):
+    """Verify a video declares its duration along with its dimensions."""
+    monkeypatch.setattr(
+        "guard_client.client.probe_media",
+        lambda *_, **__: MediaInfo(
+            media_type=MediaType.MP4,
+            width=1280,
+            height=720,
+            duration_seconds=4.5,
+            frames=5,
+        ),
+    )
+    routes = mock_full_lifecycle()
+
+    client.analyze(b"\x00" * 64, media_type="video/mp4")
+
+    body = create_body(routes)
+    assert (body["width"], body["height"], body["duration_seconds"]) == (1280, 720, 4.5)
+
+
+@respx.mock
+def test_analyze_without_readable_dimensions_still_runs(client, png, monkeypatch):
+    """Ensure media the probe cannot read is analyzed without declared dimensions."""
+
+    def unreadable(*_, **__):
+        raise GuardError("cannot read the header")
+
+    monkeypatch.setattr("guard_client.client.probe_media", unreadable)
+    routes = mock_full_lifecycle()
+
+    result = client.analyze(png)
+
+    assert not {"width", "height", "duration_seconds"} & create_body(routes).keys()
+    assert result.prediction_id == PREDICTION_ID
+
+
+@respx.mock
+async def test_async_analyze_declares_the_probed_dimensions(async_client, png):
+    """Verify the async client declares dimensions as the sync one does."""
+    routes = mock_full_lifecycle()
+
+    await async_client.analyze(png)
+
+    assert (create_body(routes)["width"], create_body(routes)["height"]) == (1, 1)
 
 
 @respx.mock
@@ -151,11 +219,11 @@ def test_analyze_orders_multipart_fields_before_file(client, png):
 
 
 @respx.mock
-def test_analyze_raises_on_failed_activity(client, png):
-    """Verify an error is raised if the activity ends in a failed state."""
+def test_analyze_raises_on_failed_prediction(client, png):
+    """Verify an error is raised if the prediction ends in a failed state."""
     mock_full_lifecycle(status="failed")
 
-    with pytest.raises(ActivityFailedError) as exc_info:
+    with pytest.raises(PredictionFailedError) as exc_info:
         client.analyze(png)
 
     assert exc_info.value.status == "failed"
@@ -164,17 +232,17 @@ def test_analyze_raises_on_failed_activity(client, png):
 @respx.mock
 def test_analyze_handles_empty_results(client, png):
     """Ensure analyze handles missing result payloads gracefully."""
-    respx.post(ACTIVITIES_URL).mock(
+    respx.post(PREDICTIONS_URL).mock(
         return_value=httpx.Response(200, json=create_response())
     )
     respx.post(UPLOAD_URL).mock(return_value=httpx.Response(204))
-    respx.post(f"{ACTIVITIES_URL}{ACTIVITY_ID}/confirm").mock(
+    respx.post(f"{PREDICTIONS_URL}/{PREDICTION_ID}/confirm").mock(
         return_value=httpx.Response(200, json=confirm_response())
     )
-    respx.get(f"{ACTIVITIES_URL}{ACTIVITY_ID}/status").mock(
+    respx.get(f"{PREDICTIONS_URL}/{PREDICTION_ID}/status").mock(
         return_value=httpx.Response(200, json=status_response("completed"))
     )
-    respx.get(f"{ACTIVITIES_URL}{ACTIVITY_ID}").mock(
+    respx.get(f"{PREDICTIONS_URL}/{PREDICTION_ID}").mock(
         return_value=httpx.Response(200, json=detail_response(result_payload=None))
     )
 
@@ -182,13 +250,13 @@ def test_analyze_handles_empty_results(client, png):
 
     assert result.results == []
     assert result.max_score == 0
-    assert result.score_for(TASK_ID) is None
+    assert result.score_for(TARGET_ID) is None
 
 
 @respx.mock
 def test_analyze_rejects_unsupported_media_before_any_call(client, tmp_path):
     """Verify unsupported media types are rejected locally before network calls."""
-    route = respx.post(ACTIVITIES_URL).mock(return_value=httpx.Response(200))
+    route = respx.post(PREDICTIONS_URL).mock(return_value=httpx.Response(200))
     bad = tmp_path / "doc.pdf"
     bad.write_bytes(b"%PDF-1.4 nope")
 
@@ -253,16 +321,16 @@ async def test_async_analyze_runs_full_lifecycle(async_client, png):
         assert route.called, f"{name} was never called"
 
     assert result.engine is Engine.CLOUD
-    assert result.activity_id == ACTIVITY_ID
+    assert result.prediction_id == PREDICTION_ID
     assert result.max_score == 87
 
 
 @respx.mock
 async def test_async_analyze_raises_on_canceled(async_client, png):
-    """Ensure the async client raises an error if an activity is canceled."""
+    """Ensure the async client raises an error if a prediction is canceled."""
     mock_full_lifecycle(status="canceled")
 
-    with pytest.raises(ActivityFailedError) as exc_info:
+    with pytest.raises(PredictionFailedError) as exc_info:
         await async_client.analyze(png)
 
     assert exc_info.value.status == "canceled"

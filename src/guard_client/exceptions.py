@@ -21,7 +21,7 @@ engine ran.
 Examples:
     ```python
     from guard_client import (
-        ActivityFailedError,
+        PredictionFailedError,
         GuardAuthError,
         GuardError,
         GuardTimeoutError,
@@ -31,7 +31,7 @@ Examples:
         result = client.analyze("photo.jpg")
     except GuardAuthError:
         pass  # Handle bad or expired API key
-    except ActivityFailedError as exc:
+    except PredictionFailedError as exc:
         pass  # Processing ended "failed" or "canceled". exc.status says which.
     except GuardTimeoutError:
         pass  # Still processing when the deadline passed
@@ -51,7 +51,7 @@ from typing import Any, List, Optional
 from uuid import UUID
 
 __all__ = [
-    "ActivityFailedError",
+    "PredictionFailedError",
     "GuardAPIError",
     "GuardAuthError",
     "GuardConflictError",
@@ -152,7 +152,7 @@ class GuardNotFoundError(GuardAPIError):
     Note:
         Several routes answer 404 for resources that exist but do not belong to you.
         This means a 404 does not strictly prove absence. Reacting to someone else's
-        activity reports the same error as reacting to an id that was never issued.
+        prediction reports the same error as reacting to an id that was never issued.
     """
 
 
@@ -194,8 +194,8 @@ class GuardConflictError(GuardAPIError):
     The resource clashes with one that already exists (409).
 
     This is raised when a space or runner name is already taken in the same context,
-    when an activity result already has a reaction, or when an activity has already been
-    shared.
+    when a prediction result already has a reaction, or when a prediction has already
+    been shared.
 
     Note:
         This error is often benign. Because the client never retries a create operation,
@@ -283,59 +283,59 @@ class GuardUploadError(GuardError):
 
 class GuardTimeoutError(GuardError):
     """
-    An activity did not reach a terminal status before the polling deadline.
+    A prediction did not reach a terminal status before the polling deadline.
 
-    The activity is still running server-side. Only the waiting process stopped. You
+    The prediction is still running server-side. Only the waiting process stopped. You
     should fetch it again later rather than resubmitting the media.
 
     Args:
         message: What timed out, including the last status seen.
-        activity_id: The activity that was being polled.
+        prediction_id: The prediction that was being polled.
 
     Attributes:
-        activity_id: The activity still in flight so it can be polled again.
+        prediction_id: The prediction still in flight so it can be polled again.
     """
 
-    def __init__(self, message: str, *, activity_id: Optional[UUID] = None) -> None:
+    def __init__(self, message: str, *, prediction_id: Optional[UUID] = None) -> None:
         """
-        Store which activity was still running when the deadline passed.
+        Store which prediction was still running when the deadline passed.
 
         Args:
             message: What timed out, including the last status seen.
-            activity_id: The activity that was being polled.
+            prediction_id: The prediction that was being polled.
         """
         super().__init__(message)
-        self.activity_id = activity_id
+        self.prediction_id = prediction_id
 
 
-class ActivityFailedError(GuardError):
+class PredictionFailedError(GuardError):
     """
-    An activity reached a terminal status other than `completed`.
+    A prediction reached a terminal status other than `completed`.
 
     Args:
-        message: What happened, naming the activity and status.
+        message: What happened, naming the prediction and status.
         status: The terminal status reached, either `failed` or `canceled`.
-        activity_id: The activity that ended.
+        prediction_id: The prediction that ended.
 
     Attributes:
         status: The terminal status reached.
-        activity_id: The activity that ended.
+        prediction_id: The prediction that ended.
     """
 
     def __init__(
-        self, message: str, *, status: str, activity_id: Optional[UUID] = None
+        self, message: str, *, status: str, prediction_id: Optional[UUID] = None
     ) -> None:
         """
-        Store which activity ended and how.
+        Store which prediction ended and how.
 
         Args:
-            message: What happened, naming the activity and status.
+            message: What happened, naming the prediction and status.
             status: The terminal status reached.
-            activity_id: The activity that ended.
+            prediction_id: The prediction that ended.
         """
         super().__init__(message)
         self.status = status
-        self.activity_id = activity_id
+        self.prediction_id = prediction_id
 
 
 class UnsupportedMediaTypeError(GuardError, ValueError):

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Print the detection tasks available to your API key along with their IDs.
+Print the detection targets available to your API key along with their IDs.
 
-A task is one detection a space can run. The `spaces.create` function takes these IDs
-as `enabled_task_ids`, making this script useful for finding them. Only the
+A target is one detection a space can run. The `spaces.create` function takes these IDs
+as `enabled_target_ids`, making this script useful for finding them. Only the
 `GUARD_API_KEY` is required. Everything else resolves through the standard client
 precedence using arguments, the environment, or a `.env` file.
 
@@ -13,9 +13,9 @@ locale, so using `--locale de` changes what you see. The reaction keys are the v
 
 Example:
     ```bash
-    uv run python scripts/list_tasks.py
-    uv run python scripts/list_tasks.py --predictor-id <uuid>
-    uv run python scripts/list_tasks.py --locale de --sort-by created_at
+    uv run python scripts/list_targets.py
+    uv run python scripts/list_targets.py --predictor-id <uuid>
+    uv run python scripts/list_targets.py --locale de --sort-by created_at
     ```
 """
 
@@ -30,12 +30,12 @@ from guard_client import GuardClient, GuardError
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     owner = parser.add_mutually_exclusive_group()
-    owner.add_argument("--user-id", help="only tasks available to this user")
+    owner.add_argument("--user-id", help="only targets available to this user")
     owner.add_argument(
-        "--organization-id", help="only tasks available to this organization"
+        "--organization-id", help="only targets available to this organization"
     )
 
-    parser.add_argument("--predictor-id", help="only tasks this predictor supports")
+    parser.add_argument("--predictor-id", help="only targets this predictor supports")
     parser.add_argument(
         "--sort-by", choices=["name", "created_at"], help="server default: name"
     )
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--locale", help="language of the labels, e.g. en or de")
     parser.add_argument(
-        "--limit", type=int, help="stop after this many tasks (default: all)"
+        "--limit", type=int, help="stop after this many targets (default: all)"
     )
     return parser.parse_args()
 
@@ -63,28 +63,28 @@ def main() -> int:
     try:
         # locale=None keeps the usual precedence: GUARD_LOCALE, then `.env`, then "en"
         with GuardClient(locale=args.locale) as client:
-            print(f"Tasks on {client.base_url}\n")
+            print(f"Targets on {client.base_url}\n")
 
             rows = []
-            for task in client.tasks.iter_all(**filters):
-                rows.append(task)
+            for target in client.targets.iter_all(**filters):
+                rows.append(target)
                 if args.limit is not None and len(rows) >= args.limit:
                     break
 
             if not rows:
-                print("No tasks matched.")
+                print("No targets matched.")
                 return 0
 
             width = max(len(t.name) for t in rows)
-            for task in rows:
+            for target in rows:
                 reactions = (
-                    ", ".join(f"{k}: {v}" for k, v in sorted(task.reactions.items()))
+                    ", ".join(f"{k}: {v}" for k, v in sorted(target.reactions.items()))
                     or "-"
                 )
-                print(f"{task.id}  {task.name:{width}}  reactions={{{reactions}}}")
+                print(f"{target.id}  {target.name:{width}}  reactions={{{reactions}}}")
 
-            print(f"\n{len(rows)} task(s).")
-            print("Pass the ids above as enabled_task_ids when creating a space.")
+            print(f"\n{len(rows)} target(s).")
+            print("Pass the ids above as enabled_target_ids when creating a space.")
     except GuardError as exc:
         print(f"FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

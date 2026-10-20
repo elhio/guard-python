@@ -1,7 +1,7 @@
 """
-Low-level bindings for the `/api/v1/spaces/` endpoints.
+Low-level bindings for the `/api/v1/spaces` endpoints.
 
-Spaces are the containers activities are created in. Listing them is how a caller
+Spaces are the containers predictions are created in. Listing them is how a caller
 discovers the `space_id` that `GuardClient.analyze` needs.
 
 `Spaces` and `AsyncSpaces` mirror each other. All query construction lives on
@@ -40,7 +40,7 @@ from .transport import AsyncTransport, SyncTransport
 __all__ = ["AsyncSpaces", "Spaces"]
 
 #: The base URL path for the spaces endpoints.
-_BASE = "/api/v1/spaces/"
+_BASE = "/api/v1/spaces"
 
 #: Minimum length for a space name.
 NAME_MIN_LENGTH = 3
@@ -138,7 +138,7 @@ class _SpacesBase:
         is_public: bool,
         user_id: Optional[IdLike],
         organization_id: Optional[IdLike],
-        enabled_task_ids: Optional[Sequence[IdLike]],
+        enabled_target_ids: Optional[Sequence[IdLike]],
         dedicated_runner_ids: Optional[Sequence[IdLike]],
     ) -> Dict[str, Any]:
         """
@@ -154,7 +154,7 @@ class _SpacesBase:
             is_public: Whether everyone can see the space.
             user_id: The owning user. Mutually exclusive with `organization_id`.
             organization_id: The owning organization.
-            enabled_task_ids: The tasks to enable in the space.
+            enabled_target_ids: The targets to enable in the space.
             dedicated_runner_ids: Allowed for organization spaces only.
 
         Returns:
@@ -200,9 +200,9 @@ class _SpacesBase:
         else:
             payload["organization_id"] = str(organization_id)
 
-        task_ids = id_list(enabled_task_ids, field="enabled_task_ids")
-        if task_ids is not None:
-            payload["enabled_task_ids"] = task_ids
+        target_ids = id_list(enabled_target_ids, field="enabled_target_ids")
+        if target_ids is not None:
+            payload["enabled_target_ids"] = target_ids
 
         runner_ids = id_list(dedicated_runner_ids, field="dedicated_runner_ids")
         if runner_ids:
@@ -250,7 +250,7 @@ class Spaces(_SpacesBase):
         is_public: bool = False,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        enabled_task_ids: Optional[Sequence[IdLike]] = None,
+        enabled_target_ids: Optional[Sequence[IdLike]] = None,
         dedicated_runner_ids: Optional[Sequence[IdLike]] = None,
     ) -> Space:
         """
@@ -269,8 +269,8 @@ class Spaces(_SpacesBase):
                 only. A public space cannot be created inside a private organization.
             user_id: The owning user. Mutually exclusive with `organization_id`.
             organization_id: The owning organization.
-            enabled_task_ids: Tasks to enable from `Tasks.list`. Duplicates are dropped
-                and the order is preserved.
+            enabled_target_ids: Targets to enable from `Targets.list`. Duplicates are
+                dropped and the order is preserved.
             dedicated_runner_ids: Allowed for organization spaces only. Rejected for
                 user spaces.
 
@@ -285,17 +285,18 @@ class Spaces(_SpacesBase):
             GuardPaymentRequiredError: If there is no active subscription or the space
                 limit is reached.
             GuardAuthError: If the predictor is not enabled in your active plan.
-            GuardNotFoundError: If a task, runner, user, or organization id is unknown.
+            GuardNotFoundError: If a target, runner, user, or organization id is
+                unknown.
 
         Examples:
             ```python
             predictor = client.predictors.list()[0]
-            tasks = client.tasks.list(predictor_id=predictor.id)
+            targets = client.targets.list(predictor_id=predictor.id)
             space = client.spaces.create(
                 name="My Space",
                 predictor_id=predictor.id,
                 organization_id=ORG_ID,
-                enabled_task_ids=[t.id for t in tasks],
+                enabled_target_ids=[t.id for t in targets],
             )
             ```
 
@@ -310,7 +311,7 @@ class Spaces(_SpacesBase):
             is_public=is_public,
             user_id=user_id,
             organization_id=organization_id,
-            enabled_task_ids=enabled_task_ids,
+            enabled_target_ids=enabled_target_ids,
             dedicated_runner_ids=dedicated_runner_ids,
         )
         # never retried: creating a space is not idempotent, so replaying a timed-out
@@ -384,13 +385,13 @@ class Spaces(_SpacesBase):
 
         Returns:
             A `SpaceDetail` object. This carries `predictor_multiplier`,
-            `max_media_size`, and the full `enabled_tasks`, none of which appear on the
-            summary `Space` objects returned by `list`.
+            `max_media_size`, and the full `enabled_targets`, none of which appear on
+            the summary `Space` objects returned by `list`.
 
         Raises:
             GuardNotFoundError: If the space is unknown or you cannot see it.
         """
-        data = self._transport.request("GET", f"{_BASE}{space_id}")
+        data = self._transport.request("GET", f"{_BASE}/{space_id}")
         return SpaceDetail.model_validate(data)
 
     def iter_all(
@@ -484,7 +485,7 @@ class AsyncSpaces(_SpacesBase):
         is_public: bool = False,
         user_id: Optional[IdLike] = None,
         organization_id: Optional[IdLike] = None,
-        enabled_task_ids: Optional[Sequence[IdLike]] = None,
+        enabled_target_ids: Optional[Sequence[IdLike]] = None,
         dedicated_runner_ids: Optional[Sequence[IdLike]] = None,
     ) -> Space:
         """
@@ -497,7 +498,7 @@ class AsyncSpaces(_SpacesBase):
             is_public: Whether everyone can see the space.
             user_id: The owning user. Mutually exclusive with `organization_id`.
             organization_id: The owning organization.
-            enabled_task_ids: The tasks to enable in the space.
+            enabled_target_ids: The targets to enable in the space.
             dedicated_runner_ids: Allowed for organization spaces only.
 
         Returns:
@@ -516,7 +517,7 @@ class AsyncSpaces(_SpacesBase):
             is_public=is_public,
             user_id=user_id,
             organization_id=organization_id,
-            enabled_task_ids=enabled_task_ids,
+            enabled_target_ids=enabled_target_ids,
             dedicated_runner_ids=dedicated_runner_ids,
         )
         # never retried: see the note on Spaces.create
@@ -579,12 +580,12 @@ class AsyncSpaces(_SpacesBase):
 
         Returns:
             A `SpaceDetail` object carrying `predictor_multiplier` and the full
-            `enabled_tasks`. Review `Spaces.get` for more details.
+            `enabled_targets`. Review `Spaces.get` for more details.
 
         Raises:
             GuardNotFoundError: If the space is unknown or you cannot see it.
         """
-        data = await self._transport.request("GET", f"{_BASE}{space_id}")
+        data = await self._transport.request("GET", f"{_BASE}/{space_id}")
         return SpaceDetail.model_validate(data)
 
     async def iter_all(

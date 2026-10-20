@@ -36,8 +36,8 @@ __all__ = ["AsyncTransport", "SyncTransport", "TransportConfig", "DEFAULT_BASE_U
 DEFAULT_BASE_URL = "https://api.elhio.com"
 
 #: Methods replayed by default. Individual calls override this with `retry`.
-#: `POST /activities/` opts in because a duplicate create only leaves an unused
-#: activity, while `DELETE /runners/{id}` opts out because it tears down a live
+#: `POST /predictions/` opts in because a duplicate create only leaves an unused
+#: prediction, while `DELETE /runners/{id}` opts out because it tears down a live
 #: deployment.
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
 
